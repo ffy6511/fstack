@@ -566,6 +566,8 @@ def self_test(terms: Sequence[Term], patterns: Sequence[PatternDef]) -> int:
         ("今天把笔记写完了。", [], "干净文本"),
         ("飞机落地了", ["落地"], "flag 落地"),
         ("对齐认知之后再做", ["对齐认知"], "对齐认知 优先于 对齐"),
+        ("Script 默认包住读文件, 首包少放定义, 再包进去", ["包住", "首包", "包进去"], "包住与首包"),
+        ("这说明脚本式调用在编码任务上站得住", ["站得住"], "站得住"),
     ]
     failed = 0
     for source, expected, label in term_cases:
