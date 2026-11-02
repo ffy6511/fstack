@@ -1,8 +1,8 @@
 {
-  "name": "obsidian-friendily-workflow",
+  "name": "fstack",
   "version": "0.1.0",
   "private": true,
-  "description": "Personal agent skills: Obsidian vault workflow + daily collaboration (e.g. consensus check)",
+  "description": "Personal workflow: IDE skills, automations, Grok Bot skills, and per-work AGENTS templates.",
   "scripts": {
     "format": "prettier --write .",
     "format:check": "prettier --check ."
