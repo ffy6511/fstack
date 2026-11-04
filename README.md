@@ -1,6 +1,6 @@
 # fstack
 
-个人工作流。这个仓库放我自己的 agent 材料：本机用的 skill、到点跑的任务、Grok Bot 的 skill 和 routine，以及换一类工作时用的说明。
+个人工作流。这个仓库放我自己的 agent 材料：本机用的 skill、到点跑的任务、Grok Bot 的 skill 和 routine、可复用的 prompt，以及换一类工作时用的说明。
 
 不同程序读不同的目录。本机 skill 再按工作分成二级目录，里面是真实文件。要用的时候 clone 这个仓库，再把 skill 目录软链接到项目或家目录。链接不放进这个仓库。
 
@@ -20,6 +20,8 @@ automations/
 bots/
   skills/            目录同 grokbot-skills 仓库根
   automations/       Grok Bot 的 routine
+prompts/
+  images/            生图、改图用的风格说明
 rules/
   anti-sycophancy.md 复制到 agent 的用户规则
 ```
@@ -33,6 +35,7 @@ rules/
 | [`automations/obsidian`](automations/obsidian/README.md) | 本机定时任务 |
 | [`bots/skills`](bots/skills/README.md) | Grok Bot skill |
 | [`bots/automations`](bots/automations/README.md) | Grok Bot routine |
+| [`prompts`](prompts/README.md) | 生图等可复用 prompt |
 | [`rules`](rules/README.md) | 用户规则 |
 
 ## 挂到一个项目

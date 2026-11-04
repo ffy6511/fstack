@@ -9,11 +9,12 @@
 | `automations/<组>/<name>/` | 本机定时或无人值守任务。 |
 | `bots/skills/<id>/` | Grok Bot 的 skill。目录和 [grokbot-skills](https://github.com/ffy6511/grokbot-skills) 仓库根一致。 |
 | `bots/automations/<name>/` | Grok Bot 的 routine。 |
+| `prompts/<类>/` | 可复用的生图、改图等 prompt 正文。不是 skill；按需 `@` 或复制。 |
 | `rules/` | 复制到 agent 用户规则的个人说明。 |
 
 ## 维护
 
-- 根 `README.md` 只说明仓库怎么分、怎么链到项目。skill、任务、routine 的名单写在对应二级目录的 `README.md`。新增、改名或挪走一项时，改那份名单，不把名单抄回根 README。
+- 根 `README.md` 只说明仓库怎么分、怎么链到项目。skill、任务、routine、prompt 的名单写在对应二级目录的 `README.md`。新增、改名或挪走一项时，改那份名单，不把名单抄回根 README。
 - 组 README 先写这一组用来做什么，再列里面的 skill 或任务。句子写具体动作，不写看不出对象的比喻。
 - 对外的中文说明按 [`skills/writing/humanizer-zh`](skills/writing/humanizer-zh/SKILL.md) 改。写完再跑 `skills/writing/writing-style/scripts/check_writing_style.py`。
 - 本仓库里的 skill 是真实目录。软链接只放在使用它的项目里，不放进这个仓库。
