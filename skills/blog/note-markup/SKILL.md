@@ -14,7 +14,7 @@ description: 在 blog 或 shorts 正文里插入或修改非常规 Markdown，�
 | 诗 | `:::poem` | [poem.md](references/poem.md) |
 | `src/specimens/` 里的目录或文件 | `:::folder` | [folder.md](references/folder.md) |
 | 站内另一篇、某一节、某一段 | `[[目标]]` | [wikilink.md](references/wikilink.md) |
-| 公式 | `$` `$$` | [theme.md](references/theme.md) |
+| 公式 (金额勿用 `$` 贴数字) | `$` `$$` | [theme.md](references/theme.md) |
 | 提示或可折叠说明 | `> [!note]` | [theme.md](references/theme.md) |
 | 带说明的图片、视频 | `:::image-figure` `::video` | [theme.md](references/theme.md) |
 | 步骤、分支、时序、架构、对照 | 交给 note-figure | [note-figure](../note-figure/SKILL.md) |

@@ -6,6 +6,10 @@
 
 行内用一个 `$`。独立成段用 `$$`，公式居中。多行用 `aligned`，`&` 对齐等号，`\\` 换行。
 
+站点在 `remark-math` 里把 `$…$` 交给 KaTeX. 正文写订阅价、账单时不要用 `$` 贴在数字旁 (例如 `200 $`、`300$`), 同一段里多个 `$` 也可能把中文误包进公式. 金额写 **美元** 或 **USD**; 只有真正的 LaTeX 才用 `$…$`, 且 `$` 内侧不要夹中文.
+
+本地 `pnpm lint` 会扫描 `src/content/blog` 与 `src/content/shorts` (不含 Tutorial) 里的上述写法.
+
 ```md
 注意力写成 $\mathrm{softmax}(QK^\top / \sqrt{d})\,V$。
 
