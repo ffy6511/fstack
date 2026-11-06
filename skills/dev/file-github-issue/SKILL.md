@@ -34,9 +34,11 @@ If remotes disagree or write access is missing, stop and say which repo you woul
 
 Read what this repo already uses. Do not invent labels.
 
-1. `.github/ISSUE_TEMPLATE/*` (default title prefix, required sections, default labels).
+1. `.github/ISSUE_TEMPLATE/*` — **check this first**. If any template exists, its headings, required fields, title prefix, and default labels are authoritative; the body follows the template, not the shape below.
 2. `gh label list --repo OWNER/REPO`.
 3. A few recent issues: title style and which labels actually get applied.
+
+Only when no issue template exists does the skill's own shape apply.
 
 Pick from that set:
 
@@ -50,17 +52,17 @@ Title follows the repo (often `feat(scope): …` or the template's `feat: ` pref
 
 ### 3. Draft a self-contained body
 
-A later agent must understand **problem + intended change** from this issue alone. Include:
+A later agent must understand **problem + intended change** from this issue alone.
 
-1. **Problem** — what is true today, why it hurts, who hits it. Cite current code/docs with **repo-relative** paths.
-2. **Non-goals** — what this issue must not change.
-3. **Approach** — the agreed mechanism (which file, which knob, what default). One approach, not a menu.
-4. **Operator / API surface** — env names, CLI flags, config fields; empty/default = current behavior when that is the contract.
-5. **Design impact** — whether `docs/` or lock/schema must move first.
-6. **Acceptance** — observable checks an implementer can fail against (including the no-change default).
-7. **Pointers** — repo-relative paths and existing issue numbers only.
+When the repo has an issue template, fill its headings and required fields; do not replace them with the shape below. Only when no template exists, use this shape:
 
-Follow the repo template's required headings when they exist; map the sections above into them rather than ignoring the template.
+1. **Problem** — what is true today, why it hurts, who hits it. Cite current code/docs with **repo-relative** paths. Background and source analysis both belong here.
+2. **Approach** — the agreed mechanism (which file, which knob, what default). One approach, not a menu. Split it into:
+   - **Goals** — the outcome this issue must deliver.
+   - **Non-goals** — what must not change; keep it short.
+   - **Diagram (optional)** — a Mermaid diagram when the mechanism has more than one actor, step, or data path; skip it for a one-file change.
+
+Design, API, and doc impacts go inside Approach as a short note, not as separate sections. Do not add Operator / API surface, Acceptance, or Pointers.
 
 ### 4. Public-issue hygiene (hard)
 
@@ -87,22 +89,26 @@ If `gh` cannot write, say so; paste the title/body for the user to file. Do not 
 
 Reply with the issue URL and the labels applied. Do not dump the full body again.
 
-## Tiny shape (when the repo has no stronger template)
+## Tiny shape (only when the repo has no issue template)
 
-```markdown
+````markdown
 ## Problem
-…
-
-## Non-goals
-…
+…background, current behavior, and repo-relative source paths…
 
 ## Approach
+
+### Goals
 …
 
-## Acceptance
-…
+### Non-goals
+…short…
 
-## Pointers
-- `docs/…`
-- `src/…`
+<!-- Optional: keep only when the mechanism is not obvious from prose. -->
+```mermaid
+flowchart LR
+  A[Entry point] --> B[Slot or route]
+  B --> C[Persisted state]
 ```
+````
+
+Do not add Operator / API surface, Acceptance, or Pointers sections.
