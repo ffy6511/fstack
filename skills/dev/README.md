@@ -16,5 +16,6 @@
 | [`prepare-release`](prepare-release/SKILL.md)             | 发版准备。先核对或声明项目版本。默认只根据上次发版以来的提交起草中英双语 release note。只有用户明确说“直接发版”或 ship，才打 tag、发布。                                                                                                     |
 | [`trim-and-deepen`](trim-and-deepen/SKILL.md)             | 一大批改动之后，删掉刚改过的面上多余的代码和过度防御。架构上要加深的地方只写 proposed note，不直接改结构。手动 `/trim-and-deepen`。                                                                                                          |
 | [`statechart`](statechart/SKILL.md)                       | 把代码里隐含的状态机显式化：状态、事件、不变式，画成 Mermaid 状态图，给出违反不变式的最短路径。默认不做模型检查。手动 `/statechart`。                                                                                                        |
+| [`herdr-dshbot`](herdr-dshbot/SKILL.md)                   | 在 herdr 的 pane 里起 dsh-tui 跑任务：共用 `dsh` workspace，一个任务一个 pane，pane 名写任务名。覆盖 `HERDR_BIN_PATH`、pane 层发任务、revision 变化后再等结算。                                                                              |
 
 本机这份 `file-github-issue` 给 IDE 里的 agent。Grok Bot 上的同名 skill 在 [`bots/skills/file-github-issue`](../../bots/skills/file-github-issue/SKILL.md)，两份各自维护。

@@ -1,0 +1,4 @@
+interface:
+  display_name: "herdr dsh bot"
+  short_description: "在 herdr 的 pane 里跑 dsh-tui 任务，等结算再回读输出"
+  default_prompt: "Use $herdr-dshbot to run <task> in a herdr pane and wait for it to settle."
