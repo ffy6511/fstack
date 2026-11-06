@@ -1,0 +1,47 @@
+name: 修改现有项目
+description: 已有的 skill、自动化、prompt、规则或说明需要更换做法
+labels: ['enhancement']
+body:
+  - type: dropdown
+    id: kind
+    attributes:
+      label: 项目类型
+      options:
+        - Skill
+        - 自动化
+        - Prompt
+        - 规则
+        - Agent 说明
+        - Bot skill / routine
+        - 仓库说明
+    validations:
+      required: true
+
+  - type: input
+    id: path
+    attributes:
+      label: 项目路径
+      placeholder: skills/dev/spec-driven-delivery
+    validations:
+      required: true
+
+  - type: textarea
+    id: now
+    attributes:
+      label: 当前做法
+    validations:
+      required: true
+
+  - type: textarea
+    id: should
+    attributes:
+      label: 期望做法
+      description: 说明修改完成后新增或省去的能力。
+    validations:
+      required: true
+
+  - type: textarea
+    id: upstream
+    attributes:
+      label: 上游参考
+      description: 如有请提供链接，说明其解决的问题与本仓库采纳的部分；无则填写"无"。

@@ -1,0 +1,55 @@
+name: 执行失败
+description: skill、自动化、脚本或说明出现错误，或结果不符合预期
+labels: ['bug']
+body:
+  - type: dropdown
+    id: kind
+    attributes:
+      label: 项目类型
+      options:
+        - Skill
+        - 自动化
+        - Prompt
+        - 规则
+        - Agent 说明
+        - Bot skill / routine
+        - 仓库说明
+    validations:
+      required: true
+
+  - type: input
+    id: path
+    attributes:
+      label: 项目路径
+      placeholder: skills/dev/nightly-hardening
+    validations:
+      required: true
+
+  - type: textarea
+    id: happened
+    attributes:
+      label: 实际现象
+      description: 粘贴原始输出或报错信息，避免只写"不工作"。
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期结果
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤
+      description: 起始状态、执行的命令，以及复现频率。
+    validations:
+      required: true
+
+  - type: textarea
+    id: env
+    attributes:
+      label: 运行环境
+      description: 操作系统、agent 与相关版本，仅填写涉及项。

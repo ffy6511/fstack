@@ -1,0 +1,48 @@
+name: 新增项目
+description: 提出新增 skill、自动化、prompt、规则或 agent 说明
+labels: ['enhancement']
+body:
+  - type: dropdown
+    id: kind
+    attributes:
+      label: 项目类型
+      options:
+        - Skill
+        - 自动化
+        - Prompt
+        - 规则
+        - Agent 说明
+        - Bot skill / routine
+        - 仓库说明
+    validations:
+      required: true
+
+  - type: input
+    id: path
+    attributes:
+      label: 存放路径
+      placeholder: skills/dev/statechart
+    validations:
+      required: true
+
+  - type: textarea
+    id: gap
+    attributes:
+      label: 当前缺失的能力
+      description: 描述具体情境，避免空泛的诉求。
+    validations:
+      required: true
+
+  - type: textarea
+    id: upstream
+    attributes:
+      label: 上游参考
+      description: 如有请提供链接，说明其解决的问题与本仓库采纳的部分；无则填写"无"。
+
+  - type: textarea
+    id: usage
+    attributes:
+      label: 使用方式
+      description: Skill 填写使用者会输入的提示词；自动化填写需要预先配置的内容、执行时机与产出物。
+    validations:
+      required: true
