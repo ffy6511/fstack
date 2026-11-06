@@ -1,0 +1,6 @@
+interface:
+  display_name: 'Statechart'
+  short_description: 'Draw the implicit state machine, find rule breaks'
+  default_prompt: 'Use $statechart: draw the states of <flow> and show me the path that breaks <rule>'
+policy:
+  allow_implicit_invocation: false
