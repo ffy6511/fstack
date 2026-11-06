@@ -14,6 +14,8 @@ description: >-
 
 `scripts/herdr_dsh.py` 把这四步固定下来：起 pane、发任务、等结算、读输出。优先用它；命令面、JSON 字段、状态含义见 [references/herdr-cli.md](references/herdr-cli.md)。
 
+两条路径分开：**本机**用 `scripts/herdr_dsh.py`；只有用户明确点名另一台机器（例如「在 mini 上」）时才用 `scripts/herdr_remote.py`，细节见 [references/remote-host.md](references/remote-host.md)。
+
 ## 前置检查
 
 ```bash
@@ -21,6 +23,12 @@ python3 scripts/herdr_dsh.py check
 ```
 
 它跑 `herdr status`、`herdr --version`、`dsh-tui --version`，并打印 herdr 的绝对路径。server 没起就停下。不要裸跑 `herdr`，那是开 TUI。
+
+## 开工前：先对齐远端基线
+
+- 建树/派活前先 `git fetch`，分支 base 用远端默认分支（如 `origin/main`），不要拿落后的本地 main 当 base。
+- 建树后核对 `git rev-parse HEAD` 等于 `origin/<base>`；本地默认分支落后就用 `git merge --ff-only origin/<base>` 快进。
+- 拉不动（网络、SSH、沙箱挡住）时明确报告，不要默认沿用旧基线。
 
 ## 硬要求：HERDR_BIN_PATH 自己传
 
@@ -35,15 +43,22 @@ python3 scripts/herdr_dsh.py spawn --name issue-251 --cwd /path/to/repo
 ```
 
 - 默认 workspace `dsh`。用户明确说「这批任务单独一个 workspace」时才用 `--workspace` 换。
+- workspace 不存在时直接失败并列出已有的；要自动建就加 `--create-workspace`。
 - 一个 tab 最多 4 个 pane。第 5 个起另开 tab。
-- pane 名就是任务名，agent 名自动加 `dsh-` 前缀（`dsh-issue-251`）。
-- 输出 `{"workspace": "w9", "pane": "w9:p5", "agent": "dsh-issue-251"}`，后面两步要用。
+- pane 名就是任务名；agent 名自动加 `dsh-` 前缀，但**名字只做显示，寻址一律用 pane id**。
+- 输出 `{"workspace": "w9", "pane": "w9:p5", "agent": "dsh-issue-251", "target": "w9:p5"}`，后面两步用 `target`。
+
+### 为什么不用 agent 名寻址
+
+`herdr agent rename` 改的名字不保留：dsh-tui 每次状态变化都会重新注册自己，名字随即变空，之后 `agent get <名字>` 返回 `agent_not_found`。pane id 是稳定的，`agent get / wait / read` 都接受它。脚本已经按这个来。
 
 ## 发任务并等结算
 
 ```bash
-python3 scripts/herdr_dsh.py send --agent dsh-issue-251 --pane w9:p5 --text '把 issue #251 修了，先给计划'
+python3 scripts/herdr_dsh.py send --pane w9:p5 --text '把 issue #251 修了，先给计划'
 ```
+
+`--agent` 可选，只用于输出里标识任务名；`--pane` 是寻址键。
 
 脚本先记 `revision`，再发文本和 `Enter`，轮询到 revision 变化（说明任务被接走），最后 `agent wait` 等 `done` / `idle` / `blocked`。
 
@@ -54,7 +69,7 @@ python3 scripts/herdr_dsh.py send --agent dsh-issue-251 --pane w9:p5 --text '把
 ## 读输出和回批准
 
 ```bash
-python3 scripts/herdr_dsh.py read --agent dsh-issue-251 --pane w9:p5 --lines 30
+python3 scripts/herdr_dsh.py read --pane w9:p5 --lines 30
 ```
 
 `send` 的输出已经带最后 40 行。`status` 是 `blocked` 时先读屏幕看清问的是什么，再决定回什么：
@@ -74,9 +89,22 @@ python3 scripts/herdr_dsh.py close --pane w9:p5
 
 关 pane 会杀掉进程。用户还要看这个会话时先问。临时开的 tab 用完清掉，保留 `dsh` workspace。
 
+## 远端主机（只在显式点名时）
+
+用户说「在 mini 上」「用远端那台」才走这里。没说就默认本机，不要自作主张跨机器。
+
+```bash
+python3 scripts/herdr_remote.py --host mini check
+python3 scripts/herdr_remote.py --host mini spawn --name t1 --cwd /Users/zhuo/Developer/tmp --workspace dsh --create-workspace
+python3 scripts/herdr_remote.py --host mini send --pane wH:p2 --text '单行任务'
+```
+
+它先把 `herdr_dsh.py` 推到远端 `~/.cache/dsh-skill/`，再用 ssh 转发子命令，其余命令面和本机完全一样。远端的三处差别——PATH 要显式补 `/opt/homebrew/bin`、workspace 可能要新建、凭据来自远端自己的 `~/.dsh/.credentials.yaml`——全部写在 [references/remote-host.md](references/remote-host.md)。
+
 ## 边界
 
 - 只碰自己开的 pane 和 agent（`dsh-` 前缀）。用户已有的 agent 只读，不改、不关、不发输入。
+- 远端只在用户点名那台机器时使用；本机的 pane 和远端 pane 不混用。
 - 一次任务一个 pane。并行上限：单 tab 4 个 pane，单 workspace 2 个 tab。超了先问用户。
 - 云端 Grok Bot 经远程 shell 驱动本机的回路是 `herdr-grokbot`，不要拿本 skill 顶替。
 

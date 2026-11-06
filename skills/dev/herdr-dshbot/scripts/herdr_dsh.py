@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -41,28 +42,41 @@ def agent_state(agent: str) -> tuple:
     return entry.get("agent_status", "unknown"), entry.get("revision")
 
 
-def resolve_workspace(name_or_id: str) -> str:
+def resolve_workspace(name_or_id: str, create: bool = False, cwd: str = "") -> str:
     if WORKSPACE_ID_RE.match(name_or_id):
         return name_or_id
     spaces = result(herdr("workspace", "list"))["workspaces"]
     for space in spaces:
         if space.get("label") == name_or_id:
             return space["workspace_id"]
+    if create:
+        created = result(
+            herdr("workspace", "create", "--label", name_or_id, "--cwd", cwd or os.getcwd())
+        )
+        return created["workspace"]["workspace_id"]
     labels = ", ".join(sorted(str(s.get("label")) for s in spaces))
-    die(f"找不到 workspace {name_or_id}；现有：{labels}")
+    die(
+        f"找不到 workspace {name_or_id}；现有：{labels}。"
+        f"先建：herdr workspace create --label {name_or_id} --cwd <目录>，或加 --create-workspace"
+    )
 
 
 def wait_for_agent(pane: str, agent: str, timeout: float) -> None:
-    """dsh-tui 注册 agent 是异步的，rename 要重试。"""
+    """等 dsh-tui 注册 agent。
+
+    寻址一律用 pane id：dsh-tui 每次状态变化都会重新注册自己，`agent rename` 改的名字
+    不会保留，按名字查会变成 agent_not_found。名字只做显示。
+    """
     deadline = time.time() + timeout
     last = None
     while time.time() < deadline:
-        last = herdr("agent", "rename", pane, agent, check=False)
+        last = herdr("agent", "get", pane, check=False)
         if last.returncode == 0:
+            herdr("agent", "rename", pane, agent, check=False)  # 尽力而为，失败不影响寻址
             return
         time.sleep(0.5)
     detail = (last.stderr.strip() or last.stdout.strip()) if last else ""
-    die(f"{timeout:g}s 内 agent 没注册上，改名失败：{detail}")
+    die(f"{timeout:g}s 内 agent 没注册上（按 pane {pane} 查）：{detail}")
 
 
 def cmd_check(_args: argparse.Namespace) -> None:
@@ -83,7 +97,7 @@ def cmd_spawn(args: argparse.Namespace) -> None:
     herdr_bin = shutil.which("herdr")
     if not herdr_bin:
         die("PATH 里找不到 herdr")
-    workspace = resolve_workspace(args.workspace)
+    workspace = resolve_workspace(args.workspace, create=args.create_workspace, cwd=args.cwd)
     panes = result(herdr("pane", "list", "--workspace", workspace)).get("panes", [])
     if args.source_pane:
         source = args.source_pane
@@ -118,20 +132,25 @@ def cmd_spawn(args: argparse.Namespace) -> None:
 
     agent = AGENT_PREFIX + args.name
     wait_for_agent(pane, agent, args.claim_timeout)
-    print(json.dumps({"workspace": workspace, "pane": pane, "agent": agent}, ensure_ascii=False))
+    print(
+        json.dumps(
+            {"workspace": workspace, "pane": pane, "agent": agent, "target": pane},
+            ensure_ascii=False,
+        )
+    )
 
 
 def cmd_send(args: argparse.Namespace) -> None:
     if "\n" in args.text:
         die("多行文本会被直接提交：压成一行，或分段发、每段单独等结算")
 
-    _status0, rev0 = agent_state(args.agent)
+    _status0, rev0 = agent_state(args.pane)
     herdr("pane", "send-text", args.pane, args.text)
     herdr("pane", "send-keys", args.pane, "Enter")
 
     deadline = time.time() + args.poll_seconds
     while time.time() < deadline:
-        status, rev = agent_state(args.agent)
+        status, rev = agent_state(args.pane)
         if rev != rev0:
             break
         time.sleep(0.5)
@@ -144,7 +163,7 @@ def cmd_send(args: argparse.Namespace) -> None:
     waited = herdr(
         "agent",
         "wait",
-        args.agent,
+        args.pane,
         "--until",
         "done",
         "--until",
@@ -155,15 +174,16 @@ def cmd_send(args: argparse.Namespace) -> None:
         str(args.timeout_ms),
         check=False,
     )
-    status, rev = agent_state(args.agent)
+    status, rev = agent_state(args.pane)
     tail = herdr(
-        "agent", "read", args.agent, "--source", "recent-unwrapped", "--lines", str(args.lines),
+        "agent", "read", args.pane, "--source", "recent-unwrapped", "--lines", str(args.lines),
         check=False,
     )
     print(
         json.dumps(
             {
-                "agent": args.agent,
+                "agent": args.agent or "",
+                "target": args.pane,
                 "pane": args.pane,
                 "status": status,
                 "revision": rev,
@@ -176,20 +196,32 @@ def cmd_send(args: argparse.Namespace) -> None:
     )
 
 
+def target_of(args: argparse.Namespace) -> str:
+    """寻址用 pane id；只给了 agent 名时才退回名字。"""
+    return args.pane or args.agent
+
+
 def cmd_status(args: argparse.Namespace) -> None:
-    status, rev = agent_state(args.agent)
-    print(json.dumps({"agent": args.agent, "status": status, "revision": rev}, ensure_ascii=False))
+    target = target_of(args)
+    status, rev = agent_state(target)
+    print(
+        json.dumps(
+            {"target": target, "agent": args.agent or "", "status": status, "revision": rev},
+            ensure_ascii=False,
+        )
+    )
 
 
 def cmd_read(args: argparse.Namespace) -> None:
+    target = target_of(args)
     out = herdr(
-        "agent", "read", args.agent, "--source", args.source, "--lines", str(args.lines), check=False
+        "agent", "read", target, "--source", args.source, "--lines", str(args.lines), check=False
     )
     if out.returncode == 0:
         print(out.stdout.rstrip())
         return
     if not args.pane:
-        die(f"读不到 agent {args.agent}：{out.stderr.strip()}")
+        die(f"读不到 {target}：{out.stderr.strip()}")
     screen = herdr("pane", "read", args.pane, "--source", "visible", "--lines", str(args.lines))
     print(screen.stdout.rstrip())
 
@@ -210,6 +242,9 @@ def build_parser() -> argparse.ArgumentParser:
     spawn.add_argument("--name", required=True, help="任务名，例如 issue-251")
     spawn.add_argument("--cwd", required=True, help="pane 的工作目录")
     spawn.add_argument("--workspace", default="dsh", help="workspace 名或 id，默认 dsh")
+    spawn.add_argument(
+        "--create-workspace", action="store_true", help="workspace 不存在时按 --label 新建"
+    )
     spawn.add_argument("--source-pane", help="从哪个 pane 分屏，默认取 workspace 第一个")
     spawn.add_argument("--direction", default="down", choices=["down", "right"])
     spawn.add_argument("--boot-wait", type=float, default=8.0, help="等 dsh-tui 起来")
@@ -218,8 +253,8 @@ def build_parser() -> argparse.ArgumentParser:
     spawn.set_defaults(func=cmd_spawn)
 
     send = subs.add_parser("send", help="发一条任务并等结算")
-    send.add_argument("--agent", required=True, help="agent 名，例如 dsh-issue-251")
-    send.add_argument("--pane", required=True, help="pane id，例如 w9:p5")
+    send.add_argument("--agent", help="显示用 agent 名，例如 dsh-issue-251；寻址一律用 --pane")
+    send.add_argument("--pane", required=True, help="pane id，例如 w9:p5（寻址键）")
     send.add_argument("--text", required=True, help="单行提示")
     send.add_argument("--timeout-ms", type=int, default=600000, help="等结算的上限")
     send.add_argument("--poll-seconds", type=float, default=20.0, help="等 revision 变化的上限")
@@ -227,12 +262,13 @@ def build_parser() -> argparse.ArgumentParser:
     send.set_defaults(func=cmd_send)
 
     status = subs.add_parser("status", help="打印 agent 状态和 revision")
-    status.add_argument("--agent", required=True)
+    status.add_argument("--agent", help="仅在不给 --pane 时作为退回寻址")
+    status.add_argument("--pane", help="pane id（推荐寻址键）")
     status.set_defaults(func=cmd_status)
 
     read = subs.add_parser("read", help="读 agent 最近输出，读不到就退回读屏")
-    read.add_argument("--agent", required=True)
-    read.add_argument("--pane", help="agent 读不到时改读这个 pane")
+    read.add_argument("--agent", help="仅在不给 --pane 时作为退回寻址")
+    read.add_argument("--pane", help="pane id；agent 读不到时也用它读屏")
     read.add_argument("--lines", type=int, default=40)
     read.add_argument("--source", default="recent-unwrapped")
     read.set_defaults(func=cmd_read)
