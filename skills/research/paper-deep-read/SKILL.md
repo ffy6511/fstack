@@ -13,6 +13,13 @@ description: >
 
 # Paper Deep Read
 
+## Setup
+
+The `alphaxiv` server needs `ALPHAXIV_API_KEY` in the environment of whatever
+process starts it. When a tool is missing or answers with an auth error, tell
+the user to export that variable and restart the harness. Never ask them to
+paste the key into the chat.
+
 ## Before reading
 
 Call `alphaxiv get_paper_notes` first. The user may already have highlighted the

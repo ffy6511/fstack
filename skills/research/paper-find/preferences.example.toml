@@ -7,6 +7,6 @@ server = "pwc"
 
 [alphaxiv]
 server = "alphaxiv"
-# The key is injected by the harness as an environment variable.
-# Record the variable name only.
-env_var = "DSH_SECRET_ALPHAXIV_KEY"
+# Export this variable in the shell that starts the harness.
+# Only the name lives here; the value stays out of git.
+env_var = "ALPHAXIV_API_KEY"
