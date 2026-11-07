@@ -1,4 +1,4 @@
 interface:
-  display_name: "Paper Find"
-  short_description: "Shortlist papers for a topic from PwC and alphaXiv."
-  default_prompt: "Use $paper-find to shortlist related work for a given topic."
+  display_name: 'Paper Find'
+  short_description: 'Shortlist papers for a topic from PwC and alphaXiv.'
+  default_prompt: 'Use $paper-find to shortlist related work for a given topic.'

@@ -21,11 +21,11 @@ paste the key into the chat.
 
 ## Source order
 
-| Situation | Call |
-| --- | --- |
-| Vague topic | `pwc` `search_papers`, `mode: "hybrid"`, `limit` ≤ 25 |
-| Known task or benchmark | `pwc` `list_benchmarks`, then `list_papers` |
-| PwC recall is too coarse | `alphaxiv` `discover_papers` |
+| Situation                | Call                                                  |
+| ------------------------ | ----------------------------------------------------- |
+| Vague topic              | `pwc` `search_papers`, `mode: "hybrid"`, `limit` ≤ 25 |
+| Known task or benchmark  | `pwc` `list_benchmarks`, then `list_papers`           |
+| PwC recall is too coarse | `alphaxiv` `discover_papers`                          |
 
 Cost: alphaXiv `discover_papers`, `get_paper_content` and `answer_pdf_queries`
 bill against the subscription quota. `get_for_you_feed`, `get_hot_feed` and
@@ -50,7 +50,7 @@ candidates that survive.
 One table, 5–10 rows:
 
 | arXiv ID | Title | Why it is here | Official code |
-| --- | --- | --- | --- |
+| -------- | ----- | -------------- | ------------- |
 
 One line per paper is enough; the user picks what to read next.
 
