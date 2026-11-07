@@ -1,0 +1,9 @@
+# Copy to preferences.toml and adjust. preferences.toml is gitignored.
+# Never put a key in this file.
+
+[alphaxiv]
+# MCP server name as registered in your harness
+server = "alphaxiv"
+# Export this variable in the shell that starts the harness.
+# Only the name lives here; the value stays out of git.
+env_var = "ALPHAXIV_API_KEY"

@@ -1,0 +1,4 @@
+interface:
+  display_name: 'SOTA Compare'
+  short_description: 'Compare state-of-the-art leaderboard results.'
+  default_prompt: 'Use $sota-compare to compare SOTA results on a benchmark.'
