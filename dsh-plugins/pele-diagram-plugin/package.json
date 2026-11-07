@@ -1,0 +1,31 @@
+{
+  "name": "@fstack/dsh-pele-diagram",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Render Mermaid code blocks in Harness chats with Pele, with zoom, pan, source switching, fullscreen and appearance settings.",
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "README.md",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "vendor/*"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true
+    }
+  }
+}

@@ -1,6 +1,6 @@
 # fstack
 
-个人工作流。这个仓库放我自己的 agent 材料：本机用的 skill、到点跑的任务、Grok Bot 的 skill 和 routine、可复用的 prompt，以及换一类工作时用的说明。
+个人工作流。这个仓库放我自己的 agent 材料：本机用的 skill、到点跑的任务、Grok Bot 的 skill 和 routine、可复用的 prompt、DSH 本地插件，以及换一类工作时用的说明。
 
 不同程序读不同的目录。本机 skill 再按工作分成二级目录，里面是真实文件。要用的时候 clone 这个仓库，再把 skill 目录软链接到项目或家目录。链接不放进这个仓库。
 
@@ -20,6 +20,7 @@ automations/
 bots/
   skills/            目录同 grokbot-skills 仓库根
   automations/       Grok Bot 的 routine
+dsh-plugins/         DSH 本地插件
 prompts/
   images/            生图、改图用的风格说明
 rules/
@@ -27,20 +28,10 @@ rules/
   general.md          git 操作先问，e2e 验收不主动跑
 ```
 
-| 目录 | 说明 |
-| --- | --- |
-| [`skills/obsidian`](skills/obsidian/README.md) | vault |
-| [`skills/writing`](skills/writing/README.md) | 写作与成稿 |
-| [`skills/blog`](skills/blog/README.md) | 正文、记号和配图 |
-| [`skills/dev`](skills/dev/README.md) | 开发协作 |
-| [`skills/research`](skills/research/README.md) | 找论文、比 SOTA、精读 |
-| [`automations/obsidian`](automations/obsidian/README.md) | 本机定时任务 |
-| [`bots/skills`](bots/skills/README.md) | Grok Bot skill |
-| [`bots/automations`](bots/automations/README.md) | Grok Bot routine |
-| [`prompts`](prompts/README.md) | 生图等可复用 prompt |
-| [`rules`](rules/README.md) | 用户规则 |
 
-## 挂到一个项目
+## 如何使用
+
+### skills
 
 agent 读取的是 `<skills 根>/<skill-id>/SKILL.md`。项目里的 `.agents/skills` 保持普通目录，把要用的 skill 目录链进去。可以链一整组，也可以再从别的组补一个。
 
@@ -58,6 +49,26 @@ ln -s ~/path/to/this-repo/agents/obsidian/AGENTS.md ./AGENTS.md
 `rules/` 里的说明复制到 agent 的用户规则。换一个仓库，这些规则仍然要带上。
 
 每一组都要出现在所有项目里时，把链接放进会随所有项目加载的 skill 目录。只在某一类项目里使用时，链接放在该项目的 `.agents/skills`。
+
+### DSH 插件
+
+`dsh-plugins/<id>` 是 DSH 的本地插件源码，一个目录一个 npm 包。装进 profile 后，DSH 通过链接读取这个目录，源码继续留在仓库。
+
+先退出 DSH Desktop，再从仓库根目录安装：
+
+```bash
+dsh plugin --profile desktop add -w "$PWD/dsh-plugins/pele-diagram-plugin"
+```
+
+重新打开 DSH，插件随 profile 加载。改完插件源码后，在设置 → 插件里停用再启用，或者重启 DSH。
+
+卸载：
+
+```bash
+dsh plugin --profile desktop remove -w @fstack/dsh-pele-diagram
+```
+
+`desktop` 换成要用的 profile。插件目录不要移动或删除，否则 profile 里的链接会断。
 
 ## 本地偏好
 

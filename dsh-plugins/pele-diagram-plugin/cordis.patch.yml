@@ -1,0 +1,4 @@
+# Insert the Mermaid diagram plugin into the profile roster.
+- insert:
+    - id: pele-diagram
+      name: '@fstack/dsh-pele-diagram'

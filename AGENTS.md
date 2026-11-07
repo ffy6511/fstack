@@ -11,6 +11,7 @@
 | `bots/automations/<name>/` | Grok Bot 的 routine。 |
 | `prompts/<类>/` | 可复用的生图、改图等 prompt 正文。不是 skill；按需 `@` 或复制。 |
 | `rules/` | 复制到 agent 用户规则的个人说明。 |
+| `dsh-plugins/<id>/` | DSH 本地插件。一个目录是一个独立的 npm 包，装进 profile 后由 DSH 加载。 |
 
 ## 维护
 
