@@ -1,0 +1,6 @@
+# Bundle layer: this patch is what enables the plugin. It is applied above the
+# profile's own rows, so a user-layer override in the profile's cordis.patch.yml
+# can still retune `config` under the same id.
+- insert:
+    - id: dsh-openui-blocks
+      name: '@fstack/dsh-openui-blocks'

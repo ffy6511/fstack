@@ -1,0 +1,76 @@
+{
+  "name": "@fstack/dsh-openui-blocks",
+  "version": "0.1.0",
+  "private": false,
+  "description": "OpenUI blocks for DeepSeek Harness: the model writes a short openui-lang program and the chat draws it with the harness's own type scale, tokens and chart rules.",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ffy6511/fstack.git",
+    "directory": "dsh-plugins/openui-blocks-plugin"
+  },
+  "homepage": "https://github.com/ffy6511/fstack/tree/main/dsh-plugins/openui-blocks-plugin",
+  "bugs": {
+    "url": "https://github.com/ffy6511/fstack/issues"
+  },
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0",
+    "dsh": ">=0.2.2-rc.1 <0.3.0"
+  },
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "src",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "build:preview": "node scripts/build.mjs --preview",
+    "test": "node scripts/build.mjs && node --test test/*.test.mjs",
+    "preview": "node scripts/build.mjs --preview && node scripts/serve-preview.mjs"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-tool"
+      ]
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-system-prompt": ">=0.2.2-rc.1 <0.3.0",
+    "@deepseek-ai/dsh-tools": ">=0.2.2-rc.1 <0.3.0",
+    "react": "^18.3.1 || ^19.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "openui",
+    "generative-ui",
+    "ui-blocks"
+  ],
+  "devDependencies": {
+    "esbuild": "0.25.10",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  }
+}
