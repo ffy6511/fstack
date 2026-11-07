@@ -1,0 +1,6 @@
+# Copy to preferences.toml and adjust. preferences.toml is gitignored.
+# Never put a key in this file.
+
+[pwc]
+# MCP server name as registered in your harness
+server = "pwc"
