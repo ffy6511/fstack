@@ -1,0 +1,2 @@
+- Without the user's permission, do not perform git operations such as git add or git commit on your own, as users may use the staging area to retain some interim acceptance results.
+- Unless explicitly required, do not independently conduct e2e test acceptance that takes too long.

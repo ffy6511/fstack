@@ -23,7 +23,8 @@ bots/
 prompts/
   images/            生图、改图用的风格说明
 rules/
-  anti-sycophancy.md 复制到 agent 的用户规则
+  anti-sycophancy.md 反迎合，每次对话都带
+  general.md          git 操作先问，e2e 验收不主动跑
 ```
 
 | 目录 | 说明 |
@@ -53,7 +54,7 @@ ln -s ~/path/to/this-repo/agents/obsidian/AGENTS.md ./AGENTS.md
 
 `agents/<组>/AGENTS.md` 整份都能用时，链到项目根。项目自己的构建命令、目录例外，写在项目那份里。
 
-`rules/anti-sycophancy.md` 复制到 agent 的用户规则。换一个仓库，这条仍然要在。
+`rules/` 里的说明复制到 agent 的用户规则。换一个仓库，这些规则仍然要带上。
 
 每一组都要出现在所有项目里时，把链接放进会随所有项目加载的 skill 目录。只在某一类项目里使用时，链接放在该项目的 `.agents/skills`。
 
