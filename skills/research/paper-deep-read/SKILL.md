@@ -22,8 +22,11 @@ paste the key into the chat.
 
 ## Before reading
 
-Call `alphaxiv get_paper_notes` first. The user may already have highlighted the
-parts they care about, which changes what is worth extracting.
+If the `alphaxiv` server exposes `get_paper_notes` (newer deployments do; the
+published 21-tool inventory does not), call it first. The user may already have
+highlighted the parts they care about, which changes what is worth extracting.
+If the tool is absent, continue without highlights — do not treat its absence
+as an auth problem and do not send the user to fix Setup.
 
 ## Steps
 
@@ -54,8 +57,12 @@ own doubts in a separate line marked as yours, not as the authors'.
 
 ## Boundaries
 
-- Do not invent page numbers. When the returned XML has no page text for a
-  claim, say the claim came from the abstract.
+- Do not invent page numbers. `answer_pdf_queries` returns only the pages it
+  matched, so missing page text does not mean the claim is in the abstract.
+  Before attributing a claim to the abstract, verify it there (for example via
+  `pwc get_paper_info`, which returns the abstract). If neither page text nor
+  the abstract supports it, mark the claim unverified instead of citing a
+  source.
 - Do not merge author-stated limitations with your own critique.
 - Hand the finished note to `$paper-md-ingest` for `papers/`. Do not build the
   vault layout yourself.
