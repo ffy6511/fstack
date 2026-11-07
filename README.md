@@ -33,6 +33,7 @@ rules/
 | [`skills/writing`](skills/writing/README.md) | 写作与成稿 |
 | [`skills/blog`](skills/blog/README.md) | 正文、记号和配图 |
 | [`skills/dev`](skills/dev/README.md) | 开发协作 |
+| [`skills/research`](skills/research/README.md) | 找论文、比 SOTA、精读 |
 | [`automations/obsidian`](automations/obsidian/README.md) | 本机定时任务 |
 | [`bots/skills`](bots/skills/README.md) | Grok Bot skill |
 | [`bots/automations`](bots/automations/README.md) | Grok Bot routine |
