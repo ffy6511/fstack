@@ -1,0 +1,4 @@
+interface:
+  display_name: "Paper Deep Read"
+  short_description: "Read one paper closely with page-level citations."
+  default_prompt: "Use $paper-deep-read to produce a structured note for one paper."

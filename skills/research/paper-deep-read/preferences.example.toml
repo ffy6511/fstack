@@ -1,0 +1,9 @@
+# Copy to preferences.toml and adjust. preferences.toml is gitignored.
+# Never put a key in this file.
+
+[alphaxiv]
+# MCP server name as registered in your harness
+server = "alphaxiv"
+# The key is injected by the harness as an environment variable.
+# Record the variable name only.
+env_var = "DSH_SECRET_ALPHAXIV_KEY"
