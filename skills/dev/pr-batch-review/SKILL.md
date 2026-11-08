@@ -65,6 +65,17 @@ gh pr diff <n>
 
 **worktree 目录名必须带 PR 号**：统一 `<worktree_root>/<repo>-pr-<n>`；用 worktrunk 建树时用 `<repo>.pr-<n>`。不要拿分支名、issue 号或任务名当目录名——并行开几个之后，一眼分不清哪个目录对应哪个 PR，回头找人、推回、清理都会出错。
 
+### 一个 pane 只做一个 PR
+
+默认一个 pane 只审一个 PR：pane 名 `pr-<n>`，worktree 里只有那一个 PR 的树，brief 里写明范围只限它。
+
+只有两种情况可以合进同一个 pane：
+
+- 两个 PR 是 stacked 关系，一个的 base 就是另一个的头分支；
+- 同一个 issue 拆出的连续分片，分开验没有意义。
+
+合并时 pane 名写成 `pr-<a>+pr-<b>`，worktree 仍然各建一个，brief 里写清为什么合。除此之外，验证中顺带发现的其它 PR 问题只记进汇总，不在这个 pane 里顺手改、顺手验。
+
 ```bash
 # 1) 读头分支和来源
 gh pr view <n> --json headRefName,headRepositoryOwner,isCrossRepository,maintainerCanModify
@@ -118,6 +129,7 @@ git -C <worktree> push --set-upstream <owner> HEAD:<headRefName>
 ## 硬规则
 
 - 不发评论、不 approve、不 merge；默认不 push，用户点名代作者改时才推回 PR 分支。要发评论先问。
+- 一个 pane 只做一个 PR；合并的例外只有 stacked 和同一 issue 的连续分片，且 pane 名要写清 `pr-<a>+pr-<b>`。
 - worktree 目录名和 pane 名都要带 `pr-<n>`：以后按 PR 号就能直接定位目录和会话。
 - 只碰自己开的 worktree 和 pane，用户已有的 pane 只读。
 - 不确定写「未确认」，不猜。
