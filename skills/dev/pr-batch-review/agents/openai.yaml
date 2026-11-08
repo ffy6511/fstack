@@ -1,0 +1,4 @@
+interface:
+  display_name: "PR batch review"
+  short_description: "批量审 PR：机械筛选、三档分流、本地并行验证后汇总成表"
+  default_prompt: "Use $pr-batch-review to triage all open PRs in <owner/repo> and verify the risky ones locally."

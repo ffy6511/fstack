@@ -1,0 +1,4 @@
+interface:
+  display_name: "resync local main"
+  short_description: "把本地未推送的提交重放到远端最新提交之上，带备份与校验"
+  default_prompt: "Use $resync-local-main to replay my unpushed commits onto origin/main."
