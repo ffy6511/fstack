@@ -79,6 +79,59 @@ def wait_for_agent(pane: str, agent: str, timeout: float) -> None:
     die(f"{timeout:g}s 内 agent 没注册上（按 pane {pane} 查）：{detail}")
 
 
+def tab_panes(workspace: str, tab_id: str) -> list[str]:
+    panes = result(herdr("pane", "list", "--workspace", workspace)).get("panes", [])
+    return [p["pane_id"] for p in panes if p.get("tab_id") == tab_id]
+
+
+def first_pane_with_room(workspace: str) -> "str | None":
+    """找还没满 4 个 pane 的 tab，取它里面第一个 pane；都满了返回 None。
+
+    取 tab 编号最大的那个：用户在 latest tab 里接着干，不会把新 pane 塞回旧 tab。
+    """
+    tabs = result(herdr("tab", "list", "--workspace", workspace)).get("tabs", [])
+    roomy = [t for t in tabs if (t.get("pane_count") or 0) < 4]
+    if not roomy:
+        return None
+    tab_id = max(roomy, key=lambda t: t.get("number") or 0)["tab_id"]
+    panes = result(herdr("pane", "list", "--workspace", workspace)).get("panes", [])
+    for pane in panes:
+        if pane.get("tab_id") == tab_id:
+            return pane["pane_id"]
+    return None
+
+
+def plan_grid(pane_in_tab: str) -> "tuple[str, str] | None":
+    """按 2x2 决定从哪个 pane、哪个方向切下一块；None 表示该 tab 满了，开新 tab。
+
+    依赖 pane layout 的矩形，不依赖 pane list 的顺序：list 的顺序按位置排，
+    第 2 块切出来的 pane 未必排在最后。
+    """
+    layout = result(herdr("pane", "layout", "--pane", pane_in_tab))["layout"]
+    panes = layout.get("panes", [])
+    area_height = layout.get("area", {}).get("height", 0)
+    n = len(panes)
+    if n == 0:
+        return None
+    if n == 1:
+        return panes[0]["pane_id"], "right"
+    if n >= 4:
+        return None
+
+    xs = {p["rect"]["x"] for p in panes}
+    if n == 2 and len(xs) == 1:
+        # 上下叠着的一对：先横着切，避免继续加深这一列
+        return panes[0]["pane_id"], "right"
+
+    full_height = [p for p in panes if p["rect"]["height"] >= area_height]
+    if n == 3 and full_height:
+        # 还剩下一条满高的列，切它
+        return full_height[0]["pane_id"], "down"
+
+    target = sorted(panes, key=lambda p: p["rect"]["x"])[-1]
+    return target["pane_id"], "down"
+
+
 def cmd_check(_args: argparse.Namespace) -> None:
     ok = True
     for cmd in (["herdr", "status"], ["herdr", "--version"], ["dsh-tui", "--version"]):
@@ -101,26 +154,60 @@ def cmd_spawn(args: argparse.Namespace) -> None:
     panes = result(herdr("pane", "list", "--workspace", workspace)).get("panes", [])
     if args.source_pane:
         source = args.source_pane
+    elif args.direction == "auto":
+        source = first_pane_with_room(workspace)
     elif panes:
         source = panes[0]["pane_id"]
     else:
+        source = None
+
+    if args.direction != "auto" and source is None:
         die(f"workspace {workspace} 里没有可分屏的 pane")
 
-    split = result(
-        herdr(
-            "pane",
-            "split",
-            source,
-            "--direction",
-            args.direction,
-            "--no-focus",
-            "--cwd",
-            args.cwd,
-            "--env",
-            f"HERDR_BIN_PATH={herdr_bin}",
+    env = ["--env", f"HERDR_BIN_PATH={herdr_bin}"]
+    if args.direction == "auto":
+        plan = plan_grid(source) if source else None
+    else:
+        plan = (source, args.direction)
+
+    if plan is None:
+        created = result(
+            herdr(
+                "tab",
+                "create",
+                "--workspace",
+                workspace,
+                "--cwd",
+                args.cwd,
+                "--no-focus",
+                *env,
+            )
         )
-    )
-    pane = split["pane"]["pane_id"]
+        pane = (created.get("root_pane") or {}).get("pane_id")
+        if not pane:
+            new_tab = (created.get("tab") or {}).get("tab_id")
+            ids = tab_panes(workspace, new_tab) if new_tab else []
+            pane = ids[0] if ids else None
+        if not pane:
+            die("新 tab 建好了，但找不到它的 pane")
+    else:
+        parent, direction = plan
+        split = result(
+            herdr(
+                "pane",
+                "split",
+                parent,
+                "--direction",
+                direction,
+                "--ratio",
+                "0.5",
+                "--no-focus",
+                "--cwd",
+                args.cwd,
+                *env,
+            )
+        )
+        pane = split["pane"]["pane_id"]
 
     herdr("pane", "rename", pane, args.name)
     herdr("pane", "run", pane, "dsh-tui")
@@ -246,7 +333,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--create-workspace", action="store_true", help="workspace 不存在时按 --label 新建"
     )
     spawn.add_argument("--source-pane", help="从哪个 pane 分屏，默认取 workspace 第一个")
-    spawn.add_argument("--direction", default="down", choices=["down", "right"])
+    spawn.add_argument(
+        "--direction",
+        default="auto",
+        choices=["auto", "down", "right"],
+        help="auto 按 2x2 网格排；指定 down/right 时从 source pane 硬切",
+    )
     spawn.add_argument("--boot-wait", type=float, default=8.0, help="等 dsh-tui 起来")
     spawn.add_argument("--enter-wait", type=float, default=3.0, help="跳过引导页后的等待")
     spawn.add_argument("--claim-timeout", type=float, default=20.0, help="等 agent 注册")
