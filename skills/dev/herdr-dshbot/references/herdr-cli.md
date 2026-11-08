@@ -15,7 +15,8 @@ CLI 走本机 unix socket `~/.config/herdr/herdr.sock`，每条命令回一行 J
 | `herdr status` | client 与 server 状态 |
 | `herdr workspace list` | workspace 列表，`result.workspaces[].{workspace_id,label}` |
 | `herdr pane list [--workspace <id>]` | pane 列表。`--workspace` 只认 id（`w9`），不认名字（`dsh`） |
-| `herdr pane split <pane> --direction down\|right --no-focus --cwd <dir> --env K=V` | 分屏，返回 `.result.pane.pane_id` |
+| `herdr pane split <pane> --direction down\|right --ratio 0.5 --no-focus --cwd <dir> --env K=V` | 分屏，返回 `.result.pane.pane_id`；`--ratio` 控制切分比例 |
+| `herdr pane layout --pane <id>` | 当前 tab 的矩形与 split 树：`result.layout.{area,panes[].rect,splits}`。排 2x2 靠它判断几何 |
 | `herdr pane rename <pane> <label>` | 改 pane 名 |
 | `herdr pane run <pane> <cmd>` | 在 pane 里起进程 |
 | `herdr pane send-text <pane> <text>` | 往终端打字；文本里的换行会立刻提交 |

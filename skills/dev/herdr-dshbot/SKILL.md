@@ -44,7 +44,9 @@ python3 scripts/herdr_dsh.py spawn --name issue-251 --cwd /path/to/repo
 
 - 默认 workspace `dsh`。用户明确说「这批任务单独一个 workspace」时才用 `--workspace` 换。
 - workspace 不存在时直接失败并列出已有的；要自动建就加 `--create-workspace`。
-- 一个 tab 最多 4 个 pane。第 5 个起另开 tab。
+- 默认按 2x2 网格排：第 2 块向右切，第 3、4 块从还剩的那条满高列向下切，切分固定 `--ratio 0.5`。
+- 一个 tab 满 4 个 pane 后自动开新 tab；新 pane 落进编号最大的、还没满的 tab。
+- 想从指定 pane 硬切一个方向时用 `--direction down|right`，这时不再按网格算。
 - pane 名就是任务名；agent 名自动加 `dsh-` 前缀，但**名字只做显示，寻址一律用 pane id**。
 - 输出 `{"workspace": "w9", "pane": "w9:p5", "agent": "dsh-issue-251", "target": "w9:p5"}`，后面两步用 `target`。
 
