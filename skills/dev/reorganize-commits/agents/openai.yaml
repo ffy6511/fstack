@@ -1,0 +1,4 @@
+interface:
+  display_name: "reorganize commits"
+  short_description: "把未推送的提交和未提交改动重排成若干提交，内容不变"
+  default_prompt: "Use $reorganize-commits to regroup my unpushed commits and working changes."
