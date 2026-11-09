@@ -19,5 +19,6 @@
 | [`herdr-dshbot`](herdr-dshbot/SKILL.md)                   | 在 herdr 的 pane 里起 dsh-tui 跑任务：共用 `dsh` workspace，一个任务一个 pane，pane 名写任务名。覆盖 `HERDR_BIN_PATH`、pane 层发任务、revision 变化后再等结算。                                                                              |
 | [`pr-batch-review`](pr-batch-review/SKILL.md)             | 批量审 PR：脚本先做机械筛选，再按合并风险分三档（可直接合 / 要本地验证 / 要作者改）。要验证的一个 PR 一个 worktree 一个 pane 并行，最后汇总成表。默认不发评论、不 approve、不 merge。                                                        |
 | [`resync-local-main`](resync-local-main/SKILL.md)         | 本地分支有未推送提交、远端同一分支又前进时：备份、暂存工作区、拉远端，把本地提交重放到新基线上，校验改动没丢，再恢复工作区。默认不 push。                                                                                                    |
+| [`reorganize-commits`](reorganize-commits/SKILL.md)       | 把当前分支上未推送的提交和工作区未提交的改动当成一个整体，按意图重排成若干提交；重排前后内容逐字节一致，不 push。                                                                                                                            |
 
 本机这份 `file-github-issue` 给 IDE 里的 agent。Grok Bot 上的同名 skill 在 [`bots/skills/file-github-issue`](../../bots/skills/file-github-issue/SKILL.md)，两份各自维护。
