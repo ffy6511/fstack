@@ -1,0 +1,43 @@
+{
+  "name": "@fstack/dsh-panel-entry",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sidebar guide entry named Panel that opens the workspace NOTES.md as a dsh-resource file, so whatever tab type claims .md renders it. Draws no document of its own.",
+  "type": "module",
+  "license": "MIT",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0",
+    "dsh": ">=0.2.2-rc.1 <0.3.0"
+  },
+  "dsh": {
+    "manifestVersion": 1,
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": []
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ffy6511/fstack.git",
+    "directory": "dsh-plugins/panel-entry-plugin"
+  },
+  "homepage": "https://github.com/ffy6511/fstack/tree/main/dsh-plugins/panel-entry-plugin",
+  "bugs": {
+    "url": "https://github.com/ffy6511/fstack/issues"
+  }
+}

@@ -1,0 +1,4 @@
+# Bundle layer: this patch is what enables the plugin.
+- insert:
+    - id: panel-entry
+      name: '@fstack/dsh-panel-entry'
