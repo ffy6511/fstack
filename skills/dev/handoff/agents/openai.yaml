@@ -1,0 +1,6 @@
+interface:
+  display_name: "handoff"
+  short_description: "把会话进度写成可交接的文档，换会话或换 agent 继续"
+  default_prompt: "Use $handoff to write a handoff document before I clear this session."
+policy:
+  allow_implicit_invocation: false
