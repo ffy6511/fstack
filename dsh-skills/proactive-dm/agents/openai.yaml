@@ -1,0 +1,4 @@
+interface:
+  display_name: "proactive dm"
+  short_description: "到点主动私聊用户：用 dsh-proactive 建一次性闹钟"
+  default_prompt: "Use $proactive-dm to message me at 20:00 about the deploy."
