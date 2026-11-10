@@ -5,6 +5,7 @@
 | 目录 | 放什么 |
 | --- | --- |
 | `skills/<组>/<id>/` | 本机 agent 的 skill。一组对应一类工作，里面是真实目录。 |
+| `dsh-skills/<id>/` | 只有 DSH 能用的 skill：正文直接调 DSH 的工具或插件，别的 agent 拿去跑不了。 |
 | `agents/<组>/AGENTS.md` | 该类工作的说明模板。链到别的项目根之后，才在那个项目里生效。 |
 | `automations/<组>/<name>/` | 本机定时或无人值守任务。 |
 | `bots/skills/<id>/` | Grok Bot 的 skill。目录和 [grokbot-skills](https://github.com/ffy6511/grokbot-skills) 仓库根一致。 |
