@@ -1,0 +1,4 @@
+interface:
+  display_name: "panel note"
+  short_description: "往工作区 NOTES.md 追加一条，用户在右栏同时能看到并编辑"
+  default_prompt: "Use $panel-note to write this into NOTES.md."
