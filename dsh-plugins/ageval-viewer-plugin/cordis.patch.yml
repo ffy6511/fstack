@@ -1,0 +1,4 @@
+# Bundle layer for the ageval viewer plugin.
+- insert:
+    - id: ageval-viewer
+      name: '@fstack/dsh-ageval-viewer'

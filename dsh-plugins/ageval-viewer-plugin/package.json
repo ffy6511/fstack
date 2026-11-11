@@ -1,0 +1,34 @@
+{
+  "name": "@fstack/dsh-ageval-viewer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local ageval suite result browser and analysis context bridge for DeepSeek Harness",
+  "type": "module",
+  "license": "MIT",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "files": ["index.js", "client.js", "src/*.js", "src/remote-reader.py", "cordis.patch.yml", "README.md"],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node scripts/build.mjs && node --test test/*.test.mjs"
+  },
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0",
+    "dsh": ">=0.2.2-rc.1 <0.3.0"
+  },
+  "dsh": {
+    "manifestVersion": 1,
+    "bundle": { "patch": "./cordis.patch.yml" },
+    "client": { "platform": "web", "inject": ["@deepseek-ai/dsh-client-ui-slots", "@deepseek-ai/dsh-client-ui-sidebar-right", "@deepseek-ai/dsh-client-ui-session", "@deepseek-ai/dsh-client-ui-conversation"] }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ffy6511/fstack.git",
+    "directory": "dsh-plugins/ageval-viewer-plugin"
+  },
+  "homepage": "https://github.com/ffy6511/fstack/tree/main/dsh-plugins/ageval-viewer-plugin"
+}
