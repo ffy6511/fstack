@@ -45,6 +45,16 @@ description: >-
    - **开跑前读该 bench 的 `limits.wall_time_seconds`（与 `agent_invocations`）**。ACP/`pi` 且 `agent_invocations: 1` 时，整段多轮会话算**一次** invoke，此时 invoke 超时 ≈ 有效 agent 预算，必须 **≥ wall_time_seconds**（TB4 全题 wall=28800 → 设 **28800**）。设成 1800 会在 ~30min 打出 `acp_timeout`，尽管 wall 仍是 8h。
    - 其它 bench 若 wall 更短或每轮多次 invoke，按 wall 与交接指定对齐；未指定时不要盲目用 1800 盖过更长的 wall。
 
+### 1a. 实际 runner 超时硬闸（2026-11-11 补强）
+
+**禁止仅凭 profile timeout/watchdog、lock/probe 或短 chat 200 放行。** 2026-11-10 HLE 两次启动违反了本节既有要求：Mini runner 未设 invoke（parent 默认300s），zju-47 runner 从 dataset .env 继承1800s；profile 的7200s未保护任务。详细步骤和只读检查器见 [runner-timeout-gate.md](references/runner-timeout-gate.md) 与 [check_run_timeouts.py](references/check_run_timeouts.py)。
+
+1. 在**目标机实际启动环境**先加载全部 env，再显式 export 已按题级 wall/agent_invocations 审定的 `AGEVAL_AGENT_INVOKE_TIMEOUT`，不许被后续 source 覆盖。本次 HLE 至少7200s，但其它 bench 不套此值。
+2. 同一环境运行检查器，校验 solver/judge 的 ModelSpec timeout/watchdog 和真实 invoke；退出非0则禁止 launch。必须 `set -e` 或 `&&` 联结，不能人工忽略失败。
+3. 检查通过后，仍需**同配置真实单题**产物与 evaluate 验证，无 infra ERROR 才恢复 formal/清E；每个 profile 独立验证，禁止拿其它模型的 smoke 替代。
+4. 主控要有断线保护、PID、文件日志；启动后检查实际 PID 的指定 timeout 环境名。SSH broken pipe 不等于 runner 已退，重挂前先查原主控/worker，防止双跑。
+5. 连续 infra ERROR 先停自己的主控、分桶、保留证据；未封存 Attempt 的剩余预算/恢复契约未核对，不准改 env 后直接重跑，不手改 summary 伪造完场。
+
 ## 1b. 数据集路径与 pure 拷贝（硬规则）
 
 - server：`~/ageval-datasets/<bench>`（**不要** `full-frontier`、**不要** `Developer/work` 前缀）。
@@ -123,15 +133,75 @@ Tailscale 到校网 LiteLLM（`10.130.138.46:8010`）只保证 API；**不替代
 3. Docker：可清 dangling；禁止 `docker system prune -a` 与 volume prune。
 4. 开跑前仍须执行 **§1c 死代理预检**（与 Tailscale 网关检查并列，缺一不可）。
 
-## 7. 仅 bot 主机：产物同步
+## 7. 产物回同步与 `results upload`（轻量 Attempt evidence，硬规则）
 
-用户机器上跑不需要。bot 主机按交接脚本备份 artifacts；成功安静，失败再私信。回 MBP full-frontier 须等 Junhao 确认（见「是否同步」）。
+### 7.1 先区分两条方向
+
+- **MBP → server 的 pure dataset 推送**：沿用 §1b，必须排除 `.ageval/`、`runs/`、`suite-runs/`、`_runner/`、`.env` 等运行产物；目标机拿到的是干净题包。
+- **server → MBP 的结果回同步 / Hub upload**：不是拷整个 dataset，也不是拷整个 suite；只处理指定的、已封存的 Attempt evidence。必须先得到 Junhao 明确允许，按 suite/task/run_id 精确选取。
+- 正式运行结果直接留在目标机器对应 dataset 目录；不要把运行目录拷到 Bot 工作区。
+
+### 7.2 Attempt 与 suite 的边界
+
+- `ageval results upload <dataset> --run <attempt_id>` 上传的是单个 `<dataset>/.ageval/runs/<attempt_id>/`，不会生成 suite leaderboard 行。
+- `ageval results upload-suite <dataset> --suite-run <suite_id> [--with-attempts]` 才是 suite 级上传；只接受终态 complete suite。`--with-attempts` 会按 suite task refs 找 Attempt，不代表可以手工把整个 `suite-runs/<id>` 目录搬走。
+- 给本地 Viewer 看状态时，suite 只需按需同步 `suite-runs/<id>/summary.json` 与 `progress.json`；这两份不能替代 Attempt evidence。
+
+### 7.3 sealed Attempt 的同步白名单
+
+对已封存 Attempt，手工回同步只允许这些路径；不存在的可选项跳过：
+
+```text
+lock.json
+result.json
+trajectory.jsonl
+summary.json
+task-artifacts/
+verifier-collect/
+evaluation/observation.jsonl
+evaluation/checks.json
+```
+
+其中 `trajectory.jsonl` 是 run 阶段轨迹；`evaluation/observation.jsonl` 是 judge/evaluate 阶段轨迹；`task-artifacts/` 与 `verifier-collect/` 是评分所需的已收集产物。
+
+### 7.4 明确排除的重产物与中间状态
+
+手工同步和上传准备都必须排除：
+
+```text
+box/
+state/
+l1-work/
+analysis/
+agent/invocations/
+evaluation/invocations/
+backend_raw/
+checkpoints/
+activity.jsonl
+replay-input.json
+.env
+缓存、源码工作区、容器层和上传中间包
+```
+
+`activity.jsonl` + `checkpoints/` 是未封存 Attempt 的 recovery bundle；`replay-input.json` 只为 fork/replay 保留，不是普通 Viewer/Attempt evidence。已封存 Attempt 默认会清理它们。
+
+注意：当前 `build_attempt_archive()` 源码显式过滤 `l1-work/`、`analysis/` 和 vendor raw，但没有用 `box/` 名称做兜底过滤；正常 sealed Attempt 会因 post-seal pruning 删除 `box/`，但若使用 `--keep-workspace` 或目录残留，不能假设 CLI 自动替它排除。因此回同步采用上述白名单，禁止直接 rsync 整个 Attempt/suite 目录。
+
+### 7.5 回同步前核对
+
+- 源机 `summary.json` 与 `result.json` 已封存；未封存 Attempt 先在源机 settle/recover，不能当普通 upload 物料。
+- 从 suite `summary.json` 的 `attempts[].run_id` 精确找需要的 Attempt，不按目录大小或最新文件猜。
+- 目标侧先保留旧副本（改名留档，不删除），再把白名单文件写入对应 `.ageval/runs/<attempt_id>/`。
+- 完成后逐个核对 `lock/result/summary/trajectory`、P/F/E、task id、文件数和路径；源机只读，不回写、不删源产物。
+- 可直接复用 `references/sync_attempt_evidence.py`：传 `--remote`、`--local`、`--suite`，重复传 `--run <attempt_id>`；先加 `--dry-run` 预演，再执行。脚本只复制本节白名单并拒绝禁目录；实现会先 include 嵌套父目录（如 `evaluation/`），再 exclude 其它路径，避免 `evaluation/observation.jsonl` / `checks.json` 被漏掉。
+- 对比源盘与 MBP 时按 `task_id` 比较旧/新 `run_id` 和状态；PASS、FAIL、ERROR 的所有新增/替换都同步，不能只同步 PASS。
+- 新开、replace、`--retry-errors` 仍须先过 BXrN；同步本身不等于授权重跑。
 
 ## 8. 交接检查清单
 
 - [ ] wt 已建/复用且本实验固定；HEAD 已写入飞书 wt 列（非长备注）；需要时已 pull main
 - [ ] dataset 路径正确；若从 MBP 推服务器已 pure 排除 runs/_xfer
-- [ ] `.env` 已对齐；**`AGEVAL_AGENT_INVOKE_TIMEOUT` 已按 §1.6 与 wall/`agent_invocations` 对齐（TB4 ACP → 28800）**
+- [ ] `.env` 已全部加载后显式设置 invoke；已在目标启动环境运行 §1a 检查器并退出0；solver/judge 的 timeout/watchdog、invoke 与实际 wall/agent_invocations 已核对；真实单题验证无 infra ERROR（不能只勾 profile/lock/probe）
 - [ ] **§1c 死代理预检通过**；Docker 镜像 pull/resolve 冒烟成功
 - [ ] model 字符串带正确前缀（DashScope → `dashscope/`）；开跑前 chat 冒烟 200（含可能被剥成的裸名）
 - [ ] 开跑位置符合 §2b（新开优先 zju-47；zju-46 维持不新开；Mini 不加新开；**清 E 例外**；删污染重开落 zju-47/bot；吃紧可 bot）
