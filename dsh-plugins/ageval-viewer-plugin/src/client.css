@@ -139,8 +139,27 @@ body {
 .ageval-scroll, .ageval-detail-scroll { min-height: 0; flex: 1; overflow: auto; }
 .ageval-scroll { padding: 0 var(--ageval-inset) 10px; }
 .ageval-detail-scroll { padding: 6px var(--ageval-inset) 12px; scrollbar-gutter: stable; }
-.ageval-group { margin-top: 8px; }
-.ageval-group-title { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 8px; min-height: 28px; border-bottom: 0.5px solid var(--ageval-border); background: var(--ageval-surface); font-size: 12px; font-weight: 500; }
+.ageval-suite-table { width: 100%; min-width: 620px; table-layout: fixed; border-collapse: separate; border-spacing: 0; color: var(--ageval-text); font: 12px/18px var(--dsw-font-family); }
+.ageval-col-check { width: 32px; }
+.ageval-col-rate { width: 90px; }
+.ageval-col-counts { width: 144px; }
+.ageval-col-time { width: 156px; }
+.ageval-suite-table th, .ageval-suite-table td { padding: 9px 8px; vertical-align: middle; text-align: left; border-bottom: .5px solid var(--ageval-border); }
+.ageval-suite-group-row th { position: sticky; top: 0; z-index: 2; height: 36px; padding-block: 10px 6px; font-size: 11px; font-weight: 500; color: var(--ageval-text-secondary); background: var(--ageval-surface); }
+.ageval-table-bench-mark { text-align: center; }
+.ageval-column-title { display: inline-flex; align-items: center; justify-content: flex-end; gap: 5px; vertical-align: middle; white-space: nowrap; }
+.ageval-column-title > svg { display: block; flex: 0 0 14px; width: 14px; height: 14px; }
+.ageval-bench-icon { display: block; width: 16px; height: 16px; margin-inline: auto; color: var(--ageval-text-secondary); flex-shrink: 0; }
+.ageval-suite-group-row .ageval-table-identity { font-size: 12px; color: var(--ageval-text); white-space: nowrap; text-overflow: ellipsis; }
+.ageval-suite-row { cursor: pointer; }
+.ageval-suite-row:hover > td, .ageval-suite-row--selected > td { background: var(--ageval-hover); }
+.ageval-suite-table .ageval-table-rate, .ageval-suite-table .ageval-table-counts, .ageval-suite-table .ageval-table-time { text-align: right; white-space: nowrap; }
+.ageval-table-check .ageval-check { display: flex; justify-content: center; }
+.ageval-table-identity { overflow: hidden; }
+.ageval-suite-link { display: block; width: 100%; padding: 0; border: 0; border-radius: var(--dsw-radius-xs); background: transparent; color: var(--ageval-text); font: 500 12px/18px var(--dsw-font-family); text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ageval-suite-link:focus-visible { outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary)); outline-offset: 2px; }
+.ageval-table-time { color: var(--ageval-text-secondary); font-size: 11px; }
+.ageval-suite-table .ageval-subline { margin-top: 3px; }
 .ageval-suite, .ageval-task { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; padding: 9px 8px; border: 0; border-bottom: 0.5px solid var(--ageval-border); background: transparent; text-align: left; cursor: pointer; }
 .ageval-suite:hover, .ageval-task:hover, .ageval-suite--selected { background: var(--ageval-hover); }
 .ageval-suite-main, .ageval-task-main, .ageval-step-main { min-width: 0; flex: 1; }

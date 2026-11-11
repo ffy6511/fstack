@@ -1,5 +1,5 @@
 import { sortSuites, formatTimestamp, formatDuration } from './display.js';
-import { Button as HostButton, Checkbox as HostCheckbox, Input as HostInput, SegmentedControl as HostSegments } from '@deepseek-ai/dsh-client-ui-primitives';
+import { Button as HostButton, Checkbox as HostCheckbox, Input as HostInput, SegmentedControl as HostSegments, IconFolderOpenOutlineRegular as BenchIcon, IconChecklistOutlineRegular as CountsIcon, IconCheckCircleOutlineRegular as RateIcon, IconClockOutlineRegular as TimeIcon } from '@deepseek-ai/dsh-client-ui-primitives';
 import { CustomSelect as Select } from './select';
 import { createElement as h, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -157,8 +157,9 @@ function ScoreRing({ value }: { value?: number | null }) {
       ratio > 0 ? h('circle', { cx: size / 2, cy: size / 2, r: radius, className: 'ageval-ring-fill', fill: 'none', strokeWidth: stroke, strokeDasharray: (ratio * circumference) + ' ' + circumference, strokeLinecap: 'round' }) : null),
     h('span', { className: 'ageval-ring-label' }, pct(value)));
 }
-function Metrics({ row }: { row: Row }) {
-  return h('span', { className: 'ageval-metrics' }, 'P ' + (row.pass ?? '-') + '  F ' + (row.fail ?? '-') + '  E ' + (row.error ?? '-'));
+function Metrics({ row, compact = false }: { row: Row; compact?: boolean }) {
+  const label = 'P ' + (row.pass ?? '-') + '  F ' + (row.fail ?? '-') + '  E ' + (row.error ?? '-');
+  return h('span', { className: 'ageval-metrics', title: label, 'aria-label': label }, compact ? [row.pass ?? '-', row.fail ?? '-', row.error ?? '-'].join(' / ') : label);
 }
 function Banner({ error, message }: { error?: string; message?: string }) {
   if (error) return h('div', { className: 'ageval-banner ageval-banner--error', role: 'alert' }, error);
@@ -434,18 +435,33 @@ function DetailView({ data, selected, error, busy, onBack, onToggle, onAttempt, 
         ids.length > 1 ? h(Select, { className: 'ageval-attempt-select', value: runId, aria: 'Attempt', onChange: (value: string) => setRuns(prev => ({ ...prev, [task.taskId]: value })), options: ids.map(id => [id, id] as [string, string]) }) : null);
     }) : h('div', { className: 'ageval-empty' }, dict.noTasks)));
 }
-function SuiteList({ rows, selected, onToggle, onOpen }: { rows: Row[]; selected: Record<string, Row>; onToggle: (row: Row) => void; onOpen: (row: Row) => void }) {
-  return h('div', null, rows.map(row => {
-    const key = row.dataset + '/' + row.suite;
-    return h('div', {
-      key, className: 'ageval-suite' + (selected[key] ? ' ageval-suite--selected' : ''), role: 'button', tabIndex: 0,
-      onClick: (event: any) => { if (event.target.closest('input,button,label')) return; onOpen(row); },
-      onKeyDown: (event: any) => { if (event.target.closest('input')) return; if (event.key === 'Enter') onOpen(row); },
-    },
-      h(HostCheckbox, { className: 'ageval-check ageval-check--compact', checked: Boolean(selected[key]), onChange: () => onToggle(row), label: dict.selected + ' ' + key }),
-      h('div', { className: 'ageval-suite-main' }, h('div', { className: 'ageval-suite-name' }, row.suite), h('div', { className: 'ageval-subline' }, [row.model || 'model unknown', row.harness, '创建 ' + formatTimestamp(row.createdAt)].filter(Boolean).join(' · '))),
-      h('div', { className: 'ageval-suite-side' }, h(ScoreRing, { value: row.passRate }), h(Metrics, { row })));
-  }));
+function SuiteList({ rows, bench, selected, onToggle, onOpen }: { rows: Row[]; bench: string; selected: Record<string, Row>; onToggle: (row: Row) => void; onOpen: (row: Row) => void }) {
+  return h('tbody', { className: 'ageval-suite-group', 'aria-label': bench },
+    h('tr', { className: 'ageval-suite-group-row' },
+      h('th', { className: 'ageval-table-bench-mark', 'aria-label': 'Bench 分组' }, h(BenchIcon, { className: 'ageval-bench-icon', width: 16, height: 16, 'aria-hidden': true })),
+      h('th', { scope: 'rowgroup', className: 'ageval-table-identity' }, bench),
+      h('th', { scope: 'col', className: 'ageval-table-rate' }, h('span', { className: 'ageval-column-title' }, h(RateIcon, { width: 14, height: 14, 'aria-hidden': true }), '通过率')),
+      h('th', { scope: 'col', className: 'ageval-table-counts' }, h('span', { className: 'ageval-column-title' }, h(CountsIcon, { width: 14, height: 14, 'aria-hidden': true }), 'P / F / E')),
+      h('th', { scope: 'col', className: 'ageval-table-time' }, h('span', { className: 'ageval-column-title' }, h(TimeIcon, { width: 14, height: 14, 'aria-hidden': true }), '创建时间'))),
+    ...rows.map(row => {
+      const key = row.dataset + '/' + row.suite;
+      return h('tr', {
+        key, className: 'ageval-suite-row' + (selected[key] ? ' ageval-suite-row--selected' : ''),
+        onClick: (event: any) => { if (event.target.closest('input,button,label')) return; onOpen(row); },
+      },
+        h('td', { className: 'ageval-table-check' }, h(HostCheckbox, { className: 'ageval-check ageval-check--compact', checked: Boolean(selected[key]), onChange: () => onToggle(row), label: dict.selected + ' ' + key })),
+        h('td', { className: 'ageval-table-identity' },
+          h('button', { type: 'button', className: 'ageval-suite-link', onClick: () => onOpen(row), title: row.suite }, row.suite),
+          h('div', { className: 'ageval-subline', title: [row.model, row.harness].filter(Boolean).join(' · ') }, [row.model || 'model unknown', row.harness].filter(Boolean).join(' · '))),
+        h('td', { className: 'ageval-table-rate' }, h(ScoreRing, { value: row.passRate })),
+        h('td', { className: 'ageval-table-counts' }, h(Metrics, { row, compact: true })),
+        h('td', { className: 'ageval-table-time' }, h('time', { dateTime: row.createdAt || undefined, title: row.createdAt || '时间未记录' }, formatTimestamp(row.createdAt))));
+    }));
+}
+export function SuiteTable({ groups, root, selected, onToggle, onOpen }: { groups: [string, Row[]][]; root: string; selected: Record<string, Row>; onToggle: (row: Row) => void; onOpen: (row: Row) => void }) {
+  return h('table', { className: 'ageval-suite-table', 'aria-label': 'Suite runs，按 bench 分组' },
+    h('colgroup', null, h('col', { className: 'ageval-col-check' }), h('col', { className: 'ageval-col-identity' }), h('col', { className: 'ageval-col-rate' }), h('col', { className: 'ageval-col-counts' }), h('col', { className: 'ageval-col-time' })),
+    ...groups.map(([name, rows]) => h(SuiteList, { key: name, rows, bench: benchLabel(name, root), selected, onToggle, onOpen })));
 }
 function sourceDisplay(source: DataSource): string {
   return source.kind === 'github' ? `${source.repo}@${source.ref || 'HEAD'} · ${source.path || '/'}` : source.kind === 'ssh' ? `${source.host} · ${source.path}` : source.path;
@@ -893,7 +909,7 @@ function App({ ctx, props }: { ctx: any; props: any }) {
         filtering ? h(Button, { quiet: true, onClick: () => { setQuery(''); setBench('all'); setModel('all'); setStatus('all'); setVerdict('all'); } }, dict.clear) : null)),
     h('div', { className: 'ageval-summary' }, h('strong', null, filtered.length + ' ' + dict.suites), h('span', null, filtered.reduce((sum, row) => sum + (row.expected || 0), 0) + ' ' + dict.tasksCount),
       h(Select, { className: 'ageval-sort-select', value: sort, onChange: setSort, aria: 'Suite 排序（各 bench 内）', options: [['time-desc', '创建时间 · 最新在前'], ['time-asc', '创建时间 · 最早在前'], ['rate-desc', '通过率 · 从高到低'], ['rate-asc', '通过率 · 从低到高'], ['name-asc', 'Suite 名称 · 升序']] })),
-    !root ? h('div', { className: 'ageval-empty' }, dict.noRoot) : h('div', { className: 'ageval-scroll' }, loading && !rows.length ? h('div', { className: 'ageval-empty' }, dict.loading) : groups.length ? groups.map(([name, items]) => h('section', { key: name, className: 'ageval-group' }, h('div', { className: 'ageval-group-title' }, benchLabel(name, root), h('span', { className: 'ageval-group-count' }, items.length + ' ' + dict.suites)), h(SuiteList, { rows: items, selected, onToggle: toggle, onOpen: open }))) : h('div', { className: 'ageval-empty' }, dict.empty)),
+    !root ? h('div', { className: 'ageval-empty' }, dict.noRoot) : h('div', { className: 'ageval-scroll' }, loading && !rows.length ? h('div', { className: 'ageval-empty' }, dict.loading) : groups.length ? h(SuiteTable, { groups, root, selected, onToggle: toggle, onOpen: open }) : h('div', { className: 'ageval-empty' }, dict.empty)),
     h(Banner, { error, message }),
     h('div', { className: 'ageval-composer' },
       h('input', { className: 'ageval-control', value: question, placeholder: dict.question, onChange: (event: any) => setQuestion(event.target.value), onKeyDown: (event: any) => { if (event.key === 'Enter') { event.preventDefault(); void send('current'); } } }),

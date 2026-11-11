@@ -1,0 +1,52 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import vm from 'node:vm';
+
+test('suite table shares columns across benches and preserves selection and row navigation', async () => {
+  let plugin;
+  const createElement = (type, props, ...children) => typeof type === 'function' ? type({ ...props, children }) : ({ type, props: props || {}, children: children.flat() });
+  const react = { createElement };
+  const primitives = { IconFolderOpenOutlineRegular: props => createElement('svg', { ...props, 'data-icon': 'folder' }), IconCheckCircleOutlineRegular: props => createElement('svg', props), IconClockOutlineRegular: props => createElement('svg', props), IconChecklistOutlineRegular: props => createElement('svg', props), Checkbox: props => createElement('checkbox', props), Button: props => createElement('button', props) };
+  const require = name => name === 'react' ? react : name === '@deepseek-ai/dsh-client-ui-primitives' ? primitives : null;
+  const window = { __ModuleLoader__: { load({ factory }) { plugin = factory(require); } } };
+  const source = await readFile(new URL('../client.js', import.meta.url), 'utf8');
+  vm.runInNewContext(source.replace('return module.exports.default ?? module.exports;', 'return module.exports;'), { window, console });
+  const first = { dataset: 'a', suite: 'long-suite-name', model: 'model', pass: 1, fail: 2, error: 3, passRate: .1, createdAt: '2026-01-01T00:00:00Z' };
+  const second = { ...first, dataset: 'b', suite: 's', createdAt: null };
+  let opened, toggled;
+  const table = plugin.SuiteTable({ groups: [['a', [first]], ['b', [second]]], root: '/root', selected: {}, onOpen: row => { opened = row; }, onToggle: row => { toggled = row; } });
+  assert.equal(table.type, 'table'); assert.equal(table.children[0].type, 'colgroup'); assert.equal(table.children[0].children.length, 5);
+  const sections = table.children.filter(node => node.type === 'tbody'); assert.equal(sections.length, 2);
+  const header = sections[0].children[0];
+  assert.equal(header.children.length, 5);
+  assert.equal(header.children[0].props.className, 'ageval-table-bench-mark');
+  assert.equal(header.children[0].children[0].type, 'svg');
+  assert.equal(header.children[0].children[0].props.width, 16);
+  assert.equal(header.children[0].children[0].props['data-icon'], 'folder');
+  assert.notEqual(header.children[3].children[0].children[0].props['data-icon'], 'folder');
+  assert.equal(sections[1].children[0].children[0].children[0].type, 'svg');
+  assert.equal(header.children[1].children[0], 'a');
+  for (const [index, label] of [[2, '通过率'], [3, 'P / F / E'], [4, '创建时间']]) {
+    const title = header.children[index].children[0];
+    assert.equal(title.children[0].type, 'svg');
+    assert.equal(title.children[0].props.width, 14);
+    assert.equal(title.children[1], label);
+  }
+  assert.equal(sections[1].children[0].children[1].children[0], 'b');
+  assert.ok(!JSON.stringify(table).includes(' suites'));
+  assert.ok(!JSON.stringify(table).includes('Suite / Model'));
+  const row = sections[0].children[1]; assert.equal(row.children.length, 5);
+  assert.equal(row.children[2].props.className, 'ageval-table-rate');
+  assert.equal(row.children[3].props.className, 'ageval-table-counts');
+  assert.equal(row.children[3].children[0].children[0], '1 / 2 / 3');
+  assert.equal(row.children[3].children[0].props['aria-label'], 'P 1  F 2  E 3');
+  assert.equal(row.children[4].props.className, 'ageval-table-time');
+  assert.equal(row.children[4].children[0].props.dateTime, first.createdAt);
+  const identity = row.children[1]; assert.ok(!JSON.stringify(identity).includes(first.createdAt));
+  row.props.onClick({ target: { closest: () => null } }); assert.equal(opened, first);
+  opened = null; row.props.onClick({ target: { closest: () => ({}) } }); assert.equal(opened, null);
+  identity.children[0].props.onClick(); assert.equal(opened, first);
+  row.children[0].children[0].props.onChange(); assert.equal(toggled, first);
+  assert.equal(sections[1].children[1].children[4].children[0].children[0], '时间未记录');
+});
