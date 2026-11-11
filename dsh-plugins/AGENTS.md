@@ -15,6 +15,10 @@ DSH 本地插件的开发约定。仓库整体规则见根 `AGENTS.md`；这里�
 - `index.js` 是 host 半：导出 `name`、`inject`、`apply`，在 `apply` 里注册工具、system prompt 段、session 投影等。`inject` 只写真正用到的服务。
 - `client.js` 是浏览器半。可以直接手写；用构建的包改 `src/client/`，由 `scripts/build.mjs` 生成 `client.js`，构建产物不手改。
 - 两半都可以缺省：只做 host 的插件不要空的 client 入口，反之亦然。
+- 新包从 `openui-blocks-plugin` 起手：host、client、`scripts/build.mjs`、preview 都在，抄结构比手搓快。
+- 用到的每个服务都写进 `inject`。少写一个的表现是 `apply` 里拿到 `undefined`，抛错被 `ctx.effect` 吞掉——插件照样显示 `active`，功能其实没注册。
+- 注册一律包在 `ctx.effect(...)` 里，卸载和热重载自动撤销；模块顶层不放副作用。
+- 能借用宿主已有服务就别自己造：客户端页用 `slots` 注册，开文件走 `sidebarRight.openResource` 或对应插件的 `openFile`；不直接改 DOM，也不 import 宿主内部模块。
 
 ## 客户端 entry id 就是包名
 
@@ -45,6 +49,26 @@ DSH 本地插件的开发约定。仓库整体规则见根 `AGENTS.md`；这里�
 - 有构建的包跑 `npm test`，它先 `scripts/build.mjs` 再 `node --test test/*.test.mjs`。
 - 提交前跑仓库根的 `npx prettier --check .`。
 - 装进 profile 后，host 半改动重启 DSH 生效；客户端 bundle 只在启动时加载，页面刷新不够。
+
+## 自查与验收
+
+分两层过，再加一条证据规矩。
+
+**ENTRY：能不能被识别、安装、启动**
+
+1. `main` / `exports["."]` / `exports["./client"]` 与仓库里的实际文件对得上。
+2. `dsh.bundle.patch` 指向本包 `cordis.patch.yml`；有客户端半时 `dsh.client.platform` 和 `inject` 齐全；`engines.dsh` 与要支持的宿主版本线一致，别只写 `*`。
+3. `npm pack --dry-run` 里能看到 `client.js`、`cordis.patch.yml`、`README.md`。客户端没进 tarball，装上去就是没有界面。
+
+**FLOW：用户能不能装、配、用、升级、卸载**
+
+1. `link:` 依赖路径、`bundles` 名单、`node_modules` 软链三处都指对；改名或挪目录之后，旧路径、旧软链、旧 `bundles` 行一起清掉。
+2. 卸载后不留残留：注册都走 `ctx.effect` 的包，删行即撤销。
+3. 安装、卸载、升级的验证放到临时 `DSH_HOME` 或另开的 profile 里做，别拿正在用的 profile 当试验场，试完删掉临时目录。
+
+**证据**
+
+`recognized`（能被识别）不等于 runtime 通过，`static` 预检也不等于 runtime。没跑过的项写 `not-run`，想标「通过」就得能给出命令、产物、环境和日期，缺一项写 `not-measured`。
 
 ## 安装与链接
 
