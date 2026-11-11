@@ -54,7 +54,36 @@
 .ageval-source-dialog::backdrop { background: rgb(0 0 0 / 25%); }
 .ageval-source-dialog *, .ageval-source-dialog *::before { box-sizing: border-box; }
 .ageval-source-dialog button, .ageval-source-dialog input { font: inherit; color: inherit; }
-.ageval-source-tabs { display: flex; gap: 18px; padding: 0 16px; border-bottom: .5px solid var(--ageval-border); }
+.ageval-source-tabs { display: flex; gap: 18px; padding: 0 16px; overflow-x: auto; border-bottom: .5px solid var(--ageval-border); }
+.ageval-github-picker { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+.ageval-github-auth { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.ageval-github-auth p { margin: 4px 0 0; }
+.ageval-github-identity { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.ageval-github-account { min-width: 0; }
+.ageval-github-avatar { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 32px; width: 32px; height: 32px; overflow: hidden; border: .5px solid var(--ageval-border); border-radius: 50%; background: var(--ageval-surface-soft); color: var(--ageval-text-muted); }
+.ageval-github-avatar img { display: block; width: 32px; height: 32px; object-fit: cover; }
+.ageval-cache-dialog { width: min(560px, calc(100vw - 32px)); }
+.ageval-cache-body { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; }
+.ageval-cache-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 10px; border: .5px solid var(--ageval-border); border-radius: 8px; background: var(--ageval-surface-soft); font-family: var(--font-mono, ui-monospace, monospace); font-size: 11px; }
+.ageval-cache-summary .ageval-host-name { font-family: var(--font-sans, system-ui, sans-serif); font-size: 12px; }
+.ageval-cache-note { margin: 0; color: var(--ageval-text-secondary); font-size: 12px; line-height: 1.6; }
+.ageval-cache-policies { display: grid; gap: 7px; margin: 0; }
+.ageval-cache-policies div { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 8px; padding-bottom: 7px; border-bottom: .5px solid var(--ageval-border); font-size: 12px; }
+.ageval-cache-policies div:last-child { border-bottom: 0; padding-bottom: 0; }
+.ageval-cache-policies dt { color: var(--ageval-text); font-weight: 500; }
+.ageval-cache-policies dd { margin: 0; color: var(--ageval-text-secondary); }
+.ageval-cache-confirm { padding: 9px 10px; border: .5px solid var(--ageval-warning); border-radius: 8px; background: var(--ageval-surface-soft); }
+.ageval-cache-confirm p { margin: 0; font-size: 12px; }
+.ageval-cache-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 9px; }
+.ageval-github-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, .65fr); gap: 10px; align-items: end; }
+.ageval-github-form label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; }
+.ageval-github-path { grid-column: 1 / -1; }
+.ageval-github-tree { display: flex; flex-direction: column; gap: 9px; min-width: 0; }
+.ageval-github-login { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; padding: 10px; border: .5px solid var(--ageval-border); border-radius: 8px; }
+.ageval-github-login code { font: 14px var(--font-mono, monospace); letter-spacing: .08em; }
+.ageval-github-login a { color: var(--ageval-accent); text-decoration: none; }
+.ageval-github-picker > .ageval-source-caption { margin: 0; }
+@media (max-width: 480px) { .ageval-github-form { grid-template-columns: minmax(0, 1fr); } .ageval-github-auth { align-items: flex-start; flex-direction: column; } }
 .ageval-source-tabs .ageval-tab { padding: 10px 0; white-space: nowrap; }
 .ageval-source-tabs .ageval-tab:disabled { opacity: .5; cursor: wait; }
 .ageval-saved-paths { padding: 12px 16px; min-height: 220px; }

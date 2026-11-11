@@ -5,7 +5,7 @@ import {
   outlineText, parseTrajectory, statusText, stepBody, stepElapsedMs, stepIconName, stopText, visibleSteps,
 } from './trajectory.js';
 
-type DataSource = { kind: 'local' | 'ssh'; path: string; host?: string };
+type DataSource = { kind: 'local' | 'ssh' | 'github'; path: string; host?: string; repo?: string; ref?: string; commit?: string };
 type Host = { alias: string; hostName?: string; user?: string; port?: string };
 type DirectoryEntry = { name: string; path: string };
 
@@ -17,7 +17,7 @@ type Row = {
 type Task = { taskId: string; status: string; score?: unknown; errorTitle?: string; errorMessage?: string; runId?: string; runIds?: string[] };
 type DetailData = { row: Row; tasks: Task[]; errors: Record<string, number> };
 type EvidenceFile = { bytes: number; truncated?: boolean; text: string };
-type Attempt = { dataset: string; suite: string; taskId: string; runId: string; files?: Record<string, EvidenceFile> };
+type Attempt = { dataset: string; suite: string; taskId: string; runId: string; files?: Record<string, EvidenceFile>; warnings?: string[]; revision?: string };
 
 const API = '/fstack-ageval/api';
 const TAB_ID = 'fstack-ageval-viewer';
@@ -365,6 +365,7 @@ function AttemptView({ attempt, onBack }: { attempt: Attempt; onBack: () => void
     h('header', { className: 'ageval-detail-head' },
       h(Button, { className: 'ageval-back', onClick: onBack, label: '返回' }, '‹'),
       h('div', { className: 'ageval-detail-title' }, h('h3', null, attempt.taskId), h('div', { className: 'ageval-detail-sub' }, attempt.runId + (peek ? '  ' + peek : '')))),
+    attempt.warnings?.length ? h(Banner, { error: attempt.warnings.join(' · ') }) : null,
     h('div', { className: 'ageval-tabs', role: 'tablist' },
       h('button', { type: 'button', className: 'ageval-tab' + (tab === 'trajectory' ? ' ageval-tab--on' : ''), onClick: () => setTab('trajectory') }, '轨迹'),
       others.length ? h('button', { type: 'button', className: 'ageval-tab' + (tab === 'files' ? ' ageval-tab--on' : ''), onClick: () => setTab('files') }, dict.files) : null),
@@ -428,12 +429,84 @@ function SuiteList({ rows, selected, onToggle, onOpen }: { rows: Row[]; selected
   }));
 }
 function sourceDisplay(source: DataSource): string {
-  return source.kind === 'ssh' ? `${source.host} · ${source.path}` : source.path;
+  return source.kind === 'github' ? `${source.repo}@${source.ref || 'HEAD'} · ${source.path || '/'}` : source.kind === 'ssh' ? `${source.host} · ${source.path}` : source.path;
+}
+function GitHubAvatar({ url }: { url?: string | null }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [url]);
+  return h('span', { className: 'ageval-github-avatar', 'aria-hidden': true }, url && !failed
+    ? h('img', { src: url, alt: '', width: 32, height: 32, referrerPolicy: 'no-referrer', onError: () => setFailed(true) })
+    : icon('user'));
+}
+function GitHubPicker({ source, onChoose }: { source: DataSource | null; onChoose: (s: DataSource) => Promise<void> }) {
+  const [auth, setAuth] = useState<any>(null);
+  const [repo, setRepo] = useState(source?.kind === 'github' ? source.repo || '' : '');
+  const [ref, setRef] = useState(source?.kind === 'github' ? source.ref || 'HEAD' : 'HEAD');
+  const [path, setPath] = useState(source?.kind === 'github' ? source.path : '');
+  const [listing, setListing] = useState<any>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [watchLogin, setWatchLogin] = useState(0);
+  const generation = useRef(0);
+  useEffect(() => {
+    let alive = true, timer: ReturnType<typeof setTimeout>;
+    const update = async () => {
+      try {
+        const value = await readJson(API + '/github/auth');
+        if (!alive) return;
+        setAuth(value);
+        if (watchLogin && !value.authenticated && ['starting', 'pending'].includes(value.login?.status)) timer = setTimeout(update, 3000);
+      } catch (cause: any) { if (alive) setError(cause.message); }
+    };
+    void update();
+    return () => { alive = false; clearTimeout(timer); generation.current++; };
+  }, [watchLogin]);
+  const browse = async (at: string) => {
+    const version = ++generation.current;
+    setBusy(true); setError(''); setListing(null);
+    try {
+      const value = await readJson(API + '/github/list', { method: 'POST', body: JSON.stringify({ kind: 'github', repo: repo.trim(), ref: ref.trim() || 'HEAD', path: at }) });
+      if (version === generation.current) { setListing(value); setPath(value.path); }
+    } catch (cause: any) { if (version === generation.current) setError(cause.message); }
+    finally { if (version === generation.current) setBusy(false); }
+  };
+  const startLogin = async () => {
+    setError('');
+    try { const login = await readJson(API + '/github/login', { method: 'POST', body: '{}' }); setAuth((value: any) => ({ ...value, login })); setWatchLogin(value => value + 1); }
+    catch (cause: any) { setError(cause.message); }
+  };
+  const change = (set: (value: string) => void, value: string) => { generation.current++; set(value); setListing(null); setBusy(false); };
+  return h('div', { className: 'ageval-github-picker' },
+    h('div', { className: 'ageval-github-auth' },
+      h('div', { className: 'ageval-github-identity' },
+        auth?.authenticated ? h(GitHubAvatar, { url: auth.avatarUrl }) : null,
+        h('div', { className: 'ageval-github-account' }, h('span', { className: 'ageval-host-name' }, auth?.authenticated ? `已连接 GitHub · ${auth.account}` : 'GitHub 账号'), h('p', { className: 'ageval-source-caption' }, auth?.authenticated ? '复用本机 gh 登录；凭证仅由 Host 使用。' : '公开仓库无需登录；私有仓库需要有读取权限的 GitHub 账号。'))),
+      auth?.authenticated ? h(Button, { quiet: true, onClick: () => { setWatchLogin(0); void readJson(API + '/github/auth').then(setAuth).catch((cause: Error) => setError(cause.message)); } }, '检查登录') : h(Button, { onClick: startLogin, disabled: auth?.loginAvailable === false || ['starting','pending'].includes(auth?.login?.status) }, '登录 GitHub')),
+    !auth?.authenticated && ['starting', 'pending'].includes(auth?.login?.status) ? h(Button, { quiet: true, onClick: () => { void readJson(API + '/github/login/cancel', { method: 'POST', body: '{}' }).then(login => { setAuth((value: any) => ({ ...value, login })); setWatchLogin(0); }); } }, '取消登录') : null,
+    auth?.loginAvailable === false ? h('p', { className: 'ageval-source-caption' }, '未找到 GitHub CLI。安装 gh 后运行 gh auth login --hostname github.com --web，再重新打开此页。') : null,
+    !auth?.authenticated && auth?.login?.userCode ? h('div', { className: 'ageval-github-login', role: 'status' },
+      h('span', null, '在 GitHub 授权页输入一次性代码：'), h('code', null, auth.login.userCode),
+      h('a', { href: 'https://github.com/login/device', target: '_blank', rel: 'noopener noreferrer', className: 'ageval-button' }, '打开授权页')) : null,
+    auth?.login?.error ? h('p', { className: 'ageval-banner--error' }, auth.login.error) : null,
+    h('form', { className: 'ageval-github-form', onSubmit: (event: any) => { event.preventDefault(); void browse(path.trim()); } },
+      h('label', null, '仓库', h('input', { className: 'ageval-control', value: repo, placeholder: 'owner/repository', onChange: (event: any) => change(setRepo, event.target.value) })),
+      h('label', null, '分支 / tag / commit', h('input', { className: 'ageval-control', value: ref, placeholder: 'HEAD', onChange: (event: any) => change(setRef, event.target.value) })),
+      h('label', { className: 'ageval-github-path' }, '仓库内目录', h('input', { className: 'ageval-control', value: path, placeholder: 'datasets/full-frontier（留空为仓库根目录）', onChange: (event: any) => change(setPath, event.target.value) })),
+      h('button', { className: 'ageval-button', type: 'submit', disabled: busy || !repo.trim() }, busy ? '读取中…' : '浏览目录')),
+    listing ? h('div', { className: 'ageval-github-tree' },
+      h('div', { className: 'ageval-source-caption' }, `${listing.source.repo} · ${listing.source.commit.slice(0, 8)} · /${listing.path}`),
+      h('div', { className: 'ageval-tree-entries' },
+        listing.path ? h('button', { className: 'ageval-tree-row', type: 'button', onClick: () => void browse(listing.path.split('/').slice(0, -1).join('/')) }, '‹ 上一级') : null,
+        listing.entries.map((entry: any) => h('button', { key: entry.path, className: 'ageval-tree-row', type: 'button', onClick: () => void browse(entry.path) }, icon('chevron'), entry.name)),
+        !listing.entries.length ? h('p', { className: 'ageval-source-caption' }, '此目录没有子目录') : null),
+      h(Button, { accent: true, disabled: busy, onClick: () => { setBusy(true); void onChoose(listing.source).catch((cause: any) => { setBusy(false); setError(cause.message); }); } }, '保存并打开此目录')) : null,
+    h('p', { className: 'ageval-source-caption' }, '只读取已提交的轻量证据；固定到所选 commit，不克隆仓库、不下载 box 或 LFS 大文件。重新打开保存项可更新到分支最新版本。'),
+    error ? h('p', { className: 'ageval-banner--error', role: 'alert' }, error) : null);
 }
 export function SourcePicker({ source, recent, onChoose, onRemove, onClose }: {
   source: DataSource | null; recent: DataSource[]; onChoose: (s: DataSource) => Promise<void>; onRemove: (s: DataSource) => Promise<void>; onClose: () => void;
 }) {
-  const [mode, setMode] = useState<'local' | 'ssh' | 'saved'>(source?.kind || 'local');
+  const [mode, setMode] = useState<'local' | 'ssh' | 'github' | 'saved'>(source?.kind || 'local');
   const [hosts, setHosts] = useState<Host[]>([]);
   const [host, setHost] = useState(source?.host || '');
   const [path, setPath] = useState(source?.path || '');
@@ -459,7 +532,7 @@ export function SourcePicker({ source, recent, onChoose, onRemove, onClose }: {
   };
   const choose = async (picked: DataSource) => {
     setBusy(true); setFailure('');
-    try { await onChoose(picked); } catch (error: any) { setFailure(error.message); setBusy(false); }
+    try { await onChoose(picked); } catch (error: any) { setFailure(error.message); } finally { setBusy(false); }
   };
   const removeSaved = async (picked: DataSource) => {
     setBusy(true); setFailure('');
@@ -469,7 +542,7 @@ export function SourcePicker({ source, recent, onChoose, onRemove, onClose }: {
   return h('dialog', { ref: dialog, className: 'ageval-source-dialog', 'aria-labelledby': 'ageval-source-title', onCancel: onClose },
     h('div', { className: 'ageval-modal-head' }, h('h3', { id: 'ageval-source-title' }, '选择数据源'), h(Button, { quiet: true, onClick: onClose, label: '关闭' }, '×')),
     h('div', { className: 'ageval-source-tabs', role: 'tablist', 'aria-label': '数据源分组' },
-      ...([['local', '本机'], ['ssh', 'SSH 服务器'], ['saved', '已保存路径']] as const).map(([id, label]) => h('button', {
+      ...([['local', '本机'], ['ssh', 'SSH 服务器'], ['github', 'GitHub'], ['saved', '已保存路径']] as const).map(([id, label]) => h('button', {
         key: id, id: `ageval-source-tab-${id}`, type: 'button', role: 'tab',
         className: 'ageval-tab' + (mode === id ? ' ageval-tab--on' : ''),
         'aria-selected': mode === id, 'aria-controls': 'ageval-source-panel', tabIndex: mode === id ? 0 : -1,
@@ -478,9 +551,9 @@ export function SourcePicker({ source, recent, onChoose, onRemove, onClose }: {
         onKeyDown: (event: any) => {
           if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
           event.preventDefault();
-          const ids = ['local', 'ssh', 'saved'] as const;
+          const ids = ['local', 'ssh', 'github', 'saved'] as const;
           const index = ids.indexOf(mode);
-          const next = event.key === 'Home' ? 0 : event.key === 'End' ? 2 : (index + (event.key === 'ArrowRight' ? 1 : 2)) % 3;
+          const next = event.key === 'Home' ? 0 : event.key === 'End' ? ids.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : ids.length - 1)) % ids.length;
           document.getElementById(`ageval-source-tab-${ids[next]}`)?.click();
           document.getElementById(`ageval-source-tab-${ids[next]}`)?.focus();
         },
@@ -491,9 +564,10 @@ export function SourcePicker({ source, recent, onChoose, onRemove, onClose }: {
       recent.length ? recent.map(item => h('div', { key: sourceDisplay(item), className: 'ageval-saved-path-row' },
         h('button', { type: 'button', className: 'ageval-saved-path-open', disabled: busy, onClick: () => void choose(item), title: sourceDisplay(item) },
           icon(item.kind === 'ssh' ? 'terminal' : 'grid'),
-          h('span', { className: 'ageval-saved-path-info' }, h('span', { className: 'ageval-saved-path-name' }, item.kind === 'ssh' ? item.host : '本机'), h('span', { className: 'ageval-saved-path-location' }, item.path))),
+          h('span', { className: 'ageval-saved-path-info' }, h('span', { className: 'ageval-saved-path-name' }, item.kind === 'github' ? item.repo : item.kind === 'ssh' ? item.host : '本机'), h('span', { className: 'ageval-saved-path-location' }, item.path))),
         h('button', { type: 'button', className: 'ageval-saved-path-remove', disabled: busy, 'aria-label': `删除保存记录：${sourceDisplay(item)}`, title: '仅删除此保存记录', onClick: (event: any) => { event.stopPropagation(); void removeSaved(item); } }, '删除记录')))
         : h('div', { className: 'ageval-empty' }, '还没有已保存路径')) :
+    mode === 'github' ? h(GitHubPicker, { source, onChoose: choose }) :
     mode === 'local' ? h('div', { className: 'ageval-source-local' },
       h('label', { htmlFor: 'ageval-local-path' }, 'Dataset 根目录'),
       h('input', { id: 'ageval-local-path', className: 'ageval-control', value: path, placeholder: '/path/to/dataset-root', onChange: (event: any) => setPath(event.target.value) }),
@@ -516,6 +590,58 @@ export function SourcePicker({ source, recent, onChoose, onRemove, onClose }: {
     failure ? h('p', { className: 'ageval-banner ageval-banner--error', role: 'alert' }, failure) : null,
     h('div', { className: 'ageval-modal-foot' }, h('span', { className: 'ageval-source-caption' }, '只读 · 按需读取证据，不同步工作区'), h(Button, { onClick: onClose }, '取消')));
 }
+type CacheInfo = { storage: 'memory'; entries: number; bytes: number; maxEntries: number; maxBytes: number; diskPath: null };
+function formatBytes(bytes: number): string {
+  return bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+export function CacheSettings({ onClose }: { onClose: () => void }) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const [info, setInfo] = useState<CacheInfo | null>(null);
+  const [busy, setBusy] = useState(true);
+  const [confirm, setConfirm] = useState(false);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    const element = dialog.current; element?.showModal();
+    void readJson(API + '/cache').then(value => { if (alive.current) setInfo(value); })
+      .catch((cause: Error) => { if (alive.current) setError(cause.message); })
+      .finally(() => { if (alive.current) setBusy(false); });
+    return () => { alive.current = false; element?.close(); };
+  }, []);
+  const action = async (clear: boolean) => {
+    setBusy(true); setError(''); setMessage(''); setConfirm(false);
+    try {
+      const value = await readJson(API + (clear ? '/cache/clear' : '/cache'), clear ? { method: 'POST', body: '{}' } : undefined);
+      if (alive.current) { setInfo(value); if (clear) setMessage('Host 内存缓存已清理，当前页面和已保存路径保持不变。'); }
+    } catch (cause: any) { if (alive.current) setError(cause.message); }
+    finally { if (alive.current) setBusy(false); }
+  };
+  return h('dialog', { ref: dialog, className: 'ageval-source-dialog ageval-cache-dialog', 'aria-labelledby': 'ageval-settings-title', onCancel: onClose },
+    h('div', { className: 'ageval-modal-head' }, h('h3', { id: 'ageval-settings-title' }, '设置 · 缓存管理'), h(Button, { quiet: true, onClick: onClose, label: '关闭设置' }, '×')),
+    h('div', { className: 'ageval-cache-body' },
+      h('div', { className: 'ageval-cache-summary' },
+        h('span', { className: 'ageval-host-name' }, '本地磁盘缓存'), h('span', null, '未启用 · 0 B')),
+      h('p', { className: 'ageval-cache-note' }, '没有缓存目录可打开。远端数据仅按需传入内存，不创建本地镜像或临时证据文件。'),
+      h('dl', { className: 'ageval-cache-policies' },
+        h('div', null, h('dt', null, '本机'), h('dd', null, '直接读取原文件，不另存缓存。')),
+        h('div', null, h('dt', null, 'SSH'), h('dd', null, '每次按需读取服务器证据，不保留 Host 端缓存。')),
+        h('div', null, h('dt', null, 'GitHub'), h('dd', null, '仅目录树有 Host 内存缓存；证据文件按需读取，不落盘。'))),
+      h('div', { className: 'ageval-cache-summary' },
+        h('span', { className: 'ageval-host-name' }, 'GitHub 目录树 · 内存'),
+        h('span', { role: 'status' }, info ? `${info.entries} 项 · ${formatBytes(info.bytes)}` : busy ? '读取中…' : '状态不可用')),
+      h('p', { className: 'ageval-cache-note' }, info ? `按序列化数据估算占用，上限 ${info.maxEntries} 项 / ${formatBytes(info.maxBytes)}；重载插件即释放。当前页面中的列表和轨迹保留到关闭或替换，不计入此项。` : '清理仅释放插件维护的 GitHub 目录树缓存。'),
+      h('p', { className: 'ageval-cache-note' }, '清理不会删除本机或远端原文件，不影响 GitHub 登录、配置或已保存路径。头像可能由浏览器按 HTTP 策略缓存，不在此处清理。'),
+      confirm ? h('div', { className: 'ageval-cache-confirm' },
+        h('p', null, '清理 GitHub 目录树内存缓存？下次浏览时会重新读取。'),
+        h('div', { className: 'ageval-cache-actions' }, h(Button, { onClick: () => setConfirm(false) }, '取消'), h(Button, { accent: true, onClick: () => void action(true) }, '确认清理'))) : null,
+      error ? h('p', { className: 'ageval-banner--error', role: 'alert' }, error) : null,
+      message ? h('p', { className: 'ageval-banner--ok', role: 'status' }, message) : null),
+    h('div', { className: 'ageval-modal-foot' },
+      h(Button, { quiet: true, disabled: busy, onClick: () => void action(false) }, '刷新状态'),
+      h(Button, { disabled: busy || !info?.entries || confirm, onClick: () => setConfirm(true) }, '清理内存缓存')));
+}
 function App({ ctx, props }: { ctx: any; props: any }) {
   const [root, setRoot] = useState('');
   const [source, setSource] = useState<DataSource | null>(null);
@@ -523,6 +649,7 @@ function App({ ctx, props }: { ctx: any; props: any }) {
   const [draftRoot, setDraftRoot] = useState('');
   const [recent, setRecent] = useState<DataSource[]>([]);
   const [sourceOpen, setSourceOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const loadVersion = useRef(0);
   const [rows, setRows] = useState([] as Row[]);
   const [query, setQuery] = useState('');
@@ -546,7 +673,7 @@ function App({ ctx, props }: { ctx: any; props: any }) {
       const config = await readJson(API + '/config');
       if (version !== loadVersion.current) return;
       const src = config.source || (config.root ? { kind: 'local', path: config.root } : null);
-      setSource(src); setRoot(src?.path || ''); setScope(config.scope || ''); setDraftRoot(src?.path || ''); setRecent(config.recent || []);
+      setSource(src); setRoot(src?.kind === 'github' ? sourceDisplay(src) : src?.path || ''); setScope(config.scope || ''); setDraftRoot(src?.path || ''); setRecent(config.recent || []);
       setRows([]);
       const result = src ? await readJson(API + '/suites', undefined, config.scope) : { rows: [] };
       if (version === loadVersion.current) setRows(result.rows || []);
@@ -605,7 +732,7 @@ function App({ ctx, props }: { ctx: any; props: any }) {
   if (detail) return h(DetailView, { data: detail, selected: Boolean(selected[detail.row.dataset + '/' + detail.row.suite]), error, busy: pending ? dict.loading : '', onBack: () => { setDetail(null); setError(''); }, onToggle: () => toggle(detail.row), onAttempt: openAttempt });
   return h('div', { className: 'ageval-viewer' },
     h('div', { className: 'ageval-topbar' },
-      h('div', { className: 'ageval-heading' }, h('h2', null, dict.title), h('span', { className: 'ageval-meta' }, (loading ? dict.loading + ' · ' : '') + dict.readOnly + ' · ' + filtered.length + '/' + rows.length), h(Button, { quiet: true, onClick: () => void load(), disabled: loading }, dict.refresh)),
+      h('div', { className: 'ageval-heading' }, h('h2', null, dict.title), h('span', { className: 'ageval-meta' }, (loading ? dict.loading + ' · ' : '') + dict.readOnly + ' · ' + filtered.length + '/' + rows.length), h(Button, { quiet: true, onClick: () => void load(), disabled: loading }, dict.refresh), h(Button, { quiet: true, onClick: () => setSettingsOpen(true), label: '打开设置' }, '设置')),
       h('div', { className: 'ageval-root-row' },
         h('button', { type: 'button', className: 'ageval-source-display', onClick: () => setSourceOpen(true), title: source ? sourceDisplay(source) : undefined },
           icon(source?.kind === 'ssh' ? 'terminal' : 'grid'), h('span', null, source ? sourceDisplay(source) : '选择数据源'), icon('chevron')),
@@ -626,7 +753,8 @@ function App({ ctx, props }: { ctx: any; props: any }) {
         h(Button, { quiet: true, onClick: () => setSelectionOpen(true), disabled: !Object.keys(selected).length }, Object.keys(selected).length + ' ' + dict.selected),
         h(Button, { onClick: () => void send('current'), disabled: loading }, dict.send),
         h(Button, { onClick: () => void send('new'), disabled: loading }, dict.newSession))),
-    sourceOpen ? h(SourcePicker, { source, recent, onChoose: chooseSource, onRemove: removeSavedSource, onClose: () => setSourceOpen(false) }) : null, selectionOpen ? h('div', { className: 'ageval-modal-backdrop', role: 'presentation', onClick: () => setSelectionOpen(false) }, h('div', { className: 'ageval-modal', role: 'dialog', 'aria-modal': true, onClick: (event: any) => event.stopPropagation() },
+    sourceOpen ? h(SourcePicker, { source, recent, onChoose: chooseSource, onRemove: removeSavedSource, onClose: () => setSourceOpen(false) }) : null,
+    settingsOpen ? h(CacheSettings, { onClose: () => setSettingsOpen(false) }) : null, selectionOpen ? h('div', { className: 'ageval-modal-backdrop', role: 'presentation', onClick: () => setSelectionOpen(false) }, h('div', { className: 'ageval-modal', role: 'dialog', 'aria-modal': true, onClick: (event: any) => event.stopPropagation() },
       h('div', { className: 'ageval-modal-head' }, h('h3', null, dict.selected + ' ' + dict.suites), h(Button, { quiet: true, onClick: () => setSelectionOpen(false), label: '关闭' }, '×')),
       h('div', { className: 'ageval-modal-list' }, (Object.entries(selected) as [string, Row][]).map(([key, row]) => h('div', { key, className: 'ageval-selected-row' }, h('span', { className: 'ageval-task-id' }, key), h(ScoreRing, { value: row.passRate }), h(Button, { quiet: true, onClick: () => toggle(row) }, '取消')))),
       h('div', { className: 'ageval-modal-foot' }, h(Button, { accent: true, onClick: () => setSelectionOpen(false) }, '完成')))) : null);

@@ -1,6 +1,6 @@
 # ageval Viewer
 
-在 DSH Web 右侧栏查看本机或 SSH 服务器上的 ageval suite runs，并把选中的结果摘要发送给当前 session 或新建 session 分析。SSH 模式按需读取轻量证据，不下载整个数据集或工作区。
+在 DSH Web 右侧栏查看本机、SSH 服务器或 GitHub 仓库中的 ageval suite runs，并把选中的结果摘要发送给当前 session 或新建 session 分析。SSH 和 GitHub 模式按需读取轻量证据，不下载整个数据集或工作区。
 
 ## 安装
 
@@ -15,12 +15,28 @@ dsh plugin --profile web add ./dsh-plugins/ageval-viewer-plugin
 ## 使用
 
 1. 打开右侧栏的 `ageval`。
-2. 点击顶部数据源：本机输入绝对路径；SSH 选择本机配置中的 Host，逐层点击目录，或输入绝对路径后点“前往”。目录列表不递归扫描整台服务器。
+2. 点击顶部数据源：本机输入绝对路径；SSH 选择本机配置中的 Host；GitHub 输入 `owner/repository`、分支或 tag，再逐层浏览仓库目录。GitHub 私有仓库复用本机 `gh` 的安全登录；没有登录时可从弹窗发起设备登录。
 3. 点击“保存并打开”。已保存路径保留最近 12 个，可从顶部“最近路径”或数据源弹窗快速切换，然后按 bench、model、suite 筛选。
 4. 勾选 suite，输入问题后发送给当前 session，或新建一个 session 让默认 agent 分析。
 5. 点开 suite 查看 P/F/E、通过率、错误分桶和 task。点 task 打开轨迹：按用户、Agent、思考、工具、观察、终端、权限筛选，右侧细条是步骤大纲，点一下跳到那一步。`文件` tab 里是 result.json 和 summary.json。
 
 注入给 agent 的上下文包含只读声明、dataset 根目录、suite 的状态与计数，以及用于继续用 `ageval view` 检查的路径。Host 端还注册 `ageval_read_suite` 工具，供 agent 按 bench 和 suite id 读取一个 suite 的详细摘要。
+
+## GitHub 读取
+
+GitHub source 固定到打开时解析出的 commit。通过本机 `gh` 读取凭证和 API，token 不进入浏览器、配置文件、分析上下文或远端请求。公开仓库可在未登录时回退到 GitHub API；私有仓库需要本机 `gh` 已登录且账号能读取仓库。登录按钮只启动 `gh auth login --hostname github.com --web` 的设备流程，插件展示一次性代码并轮询状态，不代管密码或 token。
+
+仓库目录用 Git Trees API 按目录读取，suite 只读取 summary/progress，Attempt 才读取 result/summary/trajectory 和 evaluation evidence。超过大小上限、Git LFS 指针、symlink、submodule 和 GitHub 截断树会明确提示，不下载整个仓库。
+
+## 缓存管理
+
+顶部“设置”可查看缓存策略、GitHub 目录树的内存占用，并确认清理。GitHub 账号左侧显示用户 API 返回的头像，图片地址仅允许 GitHub 官方头像域名，加载失败显示默认用户图标。
+
+- 本机：直接读取原文件，不复制、不另存缓存。
+- SSH：按需将轻量证据传入内存，不创建本地镜像或临时证据文件。
+- GitHub：目录树有 Host 内存缓存，最多 256 项 / 16 MB（序列化数据估算）；证据 blob 按需读取、不落盘。重载插件后内存缓存释放。
+- 没有本地磁盘缓存目录，因此不提供“打开缓存文件夹”按钮。当前页面的列表和轨迹数据保留到关闭或替换，不计入 Host 目录树缓存；头像可能由浏览器按 HTTP 策略缓存，不在插件清理范围内。
+- 清理只释放插件维护的目录树缓存，不删除本机或远端原文件，不影响 GitHub 登录、配置、已保存路径或当前页面。后续浏览会重新读取目录；清理之前已经发出的目录请求不会将该次响应重新写回缓存。
 
 ## SSH 读取
 
