@@ -17,10 +17,39 @@ dsh plugin --profile web add ./dsh-plugins/ageval-viewer-plugin
 1. 打开右侧栏的 `ageval`。
 2. 点击顶部数据源：本机输入绝对路径；SSH 选择本机配置中的 Host；GitHub 输入 `owner/repository`、分支或 tag，再逐层浏览仓库目录。GitHub 私有仓库复用本机 `gh` 的安全登录；没有登录时可从弹窗发起设备登录。
 3. 点击“保存并打开”。已保存路径保留最近 12 个，可从顶部“最近路径”或数据源弹窗快速切换，然后按 bench、model、suite 筛选。
+列表在各 bench 内默认按 suite 创建时间倒序，可切换创建时间正序、通过率升降序或名称排序；缺失值始终排在最后。suite 行显示创建时间。task 行显示摘要已有的开始/完成时间和耗时；旧记录缺少时间时可点击“读取时间”，只按需读取当前 Attempt 的 summary，不下载轨迹。没有记录的时间明确显示未知，不使用文件修改时间或 suite 时间代替。
+
 4. 勾选 suite，输入问题后发送给当前 session，或新建一个 session 让默认 agent 分析。
 5. 点开 suite 查看 P/F/E、通过率、错误分桶和 task。点 task 打开轨迹：按用户、Agent、思考、工具、观察、终端、权限筛选，右侧细条是步骤大纲，点一下跳到那一步。`文件` tab 里是 result.json 和 summary.json。
 
 注入给 agent 的上下文包含只读声明、dataset 根目录、suite 的状态与计数，以及用于继续用 `ageval view` 检查的路径。Host 端还注册 `ageval_read_suite` 工具，供 agent 按 bench 和 suite id 读取一个 suite 的详细摘要。
+
+## 运行追踪
+
+由 DSH 所在主机的 Agent 调用 `ageval_register_run` 登记具体 suite。SSH 实验仍由本机读取，不要求远端 Agent 上报。登记不会切换当前浏览数据源；也可在浏览结果中勾选 suite 后点击“登记追踪”。
+
+```json
+{
+  "source": { "kind": "ssh", "host": "configured-host", "path": "/absolute/dataset-root" },
+  "dataset": ".",
+  "suite": "suite-id",
+  "title": "实验名称",
+  "refreshSeconds": 60
+}
+```
+
+- `ageval_register_run`：按数据源、dataset、suite 去重，首次读取失败仍登记为等待证据。可以传入 `reporter` 标记 Agent/session（描述信息，不是认证身份）。
+- `ageval_list_tracked_runs`：读取最近统计、观测状态与阶段历史。
+- `ageval_checkpoint_run`：传入登记 `id`，立即读取真实证据并记录阶段；可传 `label` 命名。
+- `ageval_archive_run`：归档停止采样；`archived: false` 恢复追踪。不停止进程、不删除实验文件。
+
+“追踪中”支持单条刷新、刷新全部、阶段历史与手动记录阶段。刷新与自动采样均复用现有 suite reader，按登记 ID 定位，无需切换选中数据源。点击记录复用现有 suite/task/轨迹详情；追踪详情不混入当前数据源的分析选择。
+
+Host 默认每 60 秒采样（可在登记时设为 30–3600 秒），每条记录合并并发读取，后台按顺序读取、失败退避。每 5 分钟在结果变化时保存阶段，首次观测、命名检查点和完成时立即保存。已完成记录暂停自动采样，仍可手动刷新。DSH 关闭期间不采样；重启后继续，最近成功读取时间用于判断数据是否过期。`running` 只是文件中的记录状态，进程存活未验证。
+
+GitHub 默认在未指定 commit 时跟随 ref，每次观测固定到解析出的 commit；`followRef: false` 可保持固定版本。未提交到仓库的运行结果不可见。P/F/E 变化是净变化，task 状态变化单独记录；任务总数或完整 task 集合改变时标记不可直接比较，评测配置一致性尚未验证。
+
+登记与阶段历史保存在 `$DSH_HOME/ageval-viewer/tracking.json`（默认 `~/.dsh/ageval-viewer/tracking.json`），使用串行写入和原子替换，权限 0600。最多 100 条登记、每条保留最近 48 个阶段，文件上限 32 MB。仅保留统计及最新/阶段基线的 task 状态，不保存轨迹或工作区。这是持久化历史，不属于缓存，不会被“清理内存缓存”删除。损坏的历史不自动覆盖，现有浏览功能仍可用。
 
 ## GitHub 读取
 
@@ -28,9 +57,12 @@ GitHub source 固定到打开时解析出的 commit。通过本机 `gh` 读取�
 
 仓库目录用 Git Trees API 按目录读取，suite 只读取 summary/progress，Attempt 才读取 result/summary/trajectory 和 evaluation evidence。超过大小上限、Git LFS 指针、symlink、submodule 和 GitHub 截断树会明确提示，不下载整个仓库。
 
-## 缓存管理
+## 设置
 
-顶部“设置”可查看缓存策略、GitHub 目录树的内存占用，并确认清理。GitHub 账号左侧显示用户 API 返回的头像，图片地址仅允许 GitHub 官方头像域名，加载失败显示默认用户图标。
+设置项在 DSH 自己的设置侧边栏里，不另外开面板：打开 DSH 设置，左侧选「ageval 评测追踪」。
+
+- **数据目录**：追踪登记、阶段历史和来源配置的存放位置，默认 `$DSH_HOME/ageval-viewer`。可以改成任意绝对路径或 `~/` 开头的路径；保存时会迁移现有文件，重启 Host 后生效。旁边的「打开文件夹」在系统文件管理器里打开该目录。
+- **缓存**：查看缓存策略与 GitHub 目录树的内存占用，并确认清理。GitHub 账号左侧显示用户 API 返回的头像，图片地址仅允许 GitHub 官方头像域名，加载失败显示默认用户图标。
 
 - 本机：直接读取原文件，不复制、不另存缓存。
 - SSH：按需将轻量证据传入内存，不创建本地镜像或临时证据文件。
@@ -44,7 +76,7 @@ GitHub source 固定到打开时解析出的 commit。通过本机 `gh` 读取�
 
 服务器需要 Python 3。固定只读脚本经 SSH stdin 执行，不在服务器安装 daemon、不写脚本文件。第一次连接必须先在用户终端确认主机指纹，并让密钥可通过 ssh-agent/Keychain 非交互认证；插件不收集或存储密码。端口和跳板配置沿用 OpenSSH，控制连接使用独立短连接，避免遗留 ControlPath 不可用。
 
-列表只取 suite 的 summary/progress，点开 Attempt 才读取 result/summary/trajectory，以及存在时的 evaluation observation/checks。不会进入 `box/`、源码、依赖、缓存和 invocation raw。断网时显示错误，不伪装为最新结果，不创建本地镜像。配置保存在 `~/.config/fstack/ageval-viewer.json`，旧 root 配置自动兼容。
+列表只取 suite 的 summary/progress，点开 Attempt 才读取 result/summary/trajectory，以及存在时的 evaluation observation/checks。不会进入 `box/`、源码、依赖、缓存和 invocation raw。断网时显示错误，不伪装为最新结果，不创建本地镜像。配置保存在 `$DSH_HOME/ageval-viewer/config.json`（默认 `~/.dsh/ageval-viewer/config.json`），旧 root 配置自动兼容。
 
 ## 安全边界
 

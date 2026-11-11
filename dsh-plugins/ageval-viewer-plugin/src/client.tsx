@@ -1,3 +1,5 @@
+import { sortSuites, formatTimestamp, formatDuration } from './display.js';
+import { Button as HostButton, Checkbox as HostCheckbox, Input as HostInput, SegmentedControl as HostSegments } from '@deepseek-ai/dsh-client-ui-primitives';
 import { CustomSelect as Select } from './select';
 import { createElement as h, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -12,9 +14,10 @@ type DirectoryEntry = { name: string; path: string };
 type Row = {
   dataset: string; suite: string; model?: string; harness?: string; status: string;
   pass?: number | null; fail?: number | null; error?: number | null; expected?: number | null;
-  passRate?: number | null; clean?: boolean;
+  passRate?: number | null; clean?: boolean; createdAt?: string | null;
 };
-type Task = { taskId: string; status: string; score?: unknown; errorTitle?: string; errorMessage?: string; runId?: string; runIds?: string[] };
+type Timing = { startedAt?: string | null; finishedAt?: string | null; durationMs?: number | null };
+type Task = Timing & { taskId: string; status: string; score?: unknown; errorTitle?: string; errorMessage?: string; runId?: string; runIds?: string[] };
 type DetailData = { row: Row; tasks: Task[]; errors: Record<string, number> };
 type EvidenceFile = { bytes: number; truncated?: boolean; text: string };
 type Attempt = { dataset: string; suite: string; taskId: string; runId: string; files?: Record<string, EvidenceFile>; warnings?: string[]; revision?: string };
@@ -141,7 +144,7 @@ function proseNodes(text: string) {
   return blocks;
 }
 function Button({ children, onClick, disabled, accent = false, quiet = false, className = '', label }: any) {
-  return h('button', { type: 'button', className: 'ageval-button' + (accent ? ' ageval-button--accent' : '') + (quiet ? ' ageval-button--quiet' : '') + (className ? ' ' + className : ''), onClick, disabled, 'aria-label': label }, children);
+  return h(HostButton, { size: 'sm', variant: accent ? 'primary' : quiet ? 'ghost' : 'outline', className: 'ageval-host-button' + (className ? ' ' + className : ''), onClick, disabled, 'aria-label': label }, children);
 }
 
 function ScoreRing({ value }: { value?: number | null }) {
@@ -375,7 +378,22 @@ function AttemptView({ attempt, onBack }: { attempt: Attempt; onBack: () => void
           h(Trajectory, { raw: trajectory.text, truncated: trajectory.truncated }))
         : h('div', { className: 'ageval-empty' }, dict.noSteps));
 }
-function DetailView({ data, selected, error, busy, onBack, onToggle, onAttempt }: { data: DetailData; selected: boolean; error: string; busy: string; onBack: () => void; onToggle: () => void; onAttempt: (task: Task, runId: string) => void }) {
+function TaskTime({ task, runId, onRead }: { task: Task; runId: string; onRead?: (task: Task, runId: string) => Promise<Timing> }) {
+  const [loaded, setLoaded] = useState<Timing | null>(null), [busy, setBusy] = useState(false), [error, setError] = useState('');
+  useEffect(() => { setLoaded(null); setError(''); }, [runId]);
+  const request = useRef(0);
+  useEffect(() => { request.current++; return () => { request.current++; }; }, [runId]);
+  const timing = loaded || (runId === task.runId ? task : {});
+  const known = timing.startedAt || timing.finishedAt || timing.durationMs != null;
+  return h('div', { className: 'ageval-task-time' },
+    known ? h('span', { title: [timing.startedAt, timing.finishedAt].filter(Boolean).join(' → ') }, [timing.startedAt ? '开始 ' + formatTimestamp(timing.startedAt) : timing.finishedAt ? '完成 ' + formatTimestamp(timing.finishedAt) : null, timing.durationMs != null ? formatDuration(timing.durationMs) : null].filter(Boolean).join(' · ')) : h('span', null, '时间未记录'),
+    !known && !loaded && runId && onRead ? h(HostButton, { size: 'sm', variant: 'ghost', disabled: busy, onClick: (event: any) => {
+      event.stopPropagation(); const own = ++request.current; setBusy(true); setError('');
+      void onRead(task, runId).then(value => { if (request.current === own) setLoaded(value); }).catch((cause: Error) => { if (request.current === own) setError(cause.message); }).finally(() => { if (request.current === own) setBusy(false); });
+    } }, busy ? '读取中…' : '读取时间') : null,
+    error ? h('span', { className: 'ageval-error-text', role: 'status' }, error) : null);
+}
+function DetailView({ data, selected, error, busy, onBack, onToggle, onAttempt, onTiming }: { data: DetailData; selected: boolean; error: string; busy: string; onBack: () => void; onToggle?: () => void; onAttempt: (task: Task, runId: string) => void; onTiming?: (task: Task, runId: string) => Promise<Timing> }) {
   const [query, setQuery] = useState('');
   const [verdict, setVerdict] = useState('all');
   const [bucket, setBucket] = useState('');
@@ -397,9 +415,10 @@ function DetailView({ data, selected, error, busy, onBack, onToggle, onAttempt }
       h('div', { className: 'ageval-detail-title' }, h('h3', null, (row.dataset === '.' ? '' : row.dataset + '/') + row.suite), h('div', { className: 'ageval-detail-sub' }, [row.model || 'model unknown', busy].filter(Boolean).join('  '))),
       h(ScoreRing, { value: row.passRate })),
     h(Banner, { error }),
-    h('div', { className: 'ageval-kpis' }, h('label', { className: 'ageval-root-row' }, h('input', { className: 'ageval-check', type: 'checkbox', checked: selected, onChange: onToggle }), h('span', null, selected ? '已加入分析' : dict.addContext)), h(Metrics, { row }), h('span', { className: 'ageval-meta' }, row.status)),
-    Object.keys(data.errors).length ? h('div', { className: 'ageval-chips' }, Object.entries(data.errors).map(([name, count]) => h('button', { key: name, type: 'button', className: 'ageval-chip' + (bucket === name ? ' ageval-chip--on' : ''), onClick: () => setBucket(current => current === name ? '' : name) }, name + ' ' + count))) : null,
-    h('div', { className: 'ageval-chips' }, [['all', '全部 ' + data.tasks.length], ['pass', 'PASS ' + counts.pass], ['fail', 'FAIL ' + counts.fail], ['error', 'ERROR ' + counts.error]].map(([id, label]) => h('button', { key: id, type: 'button', className: 'ageval-chip' + (verdict === id ? ' ageval-chip--on' : ''), onClick: () => setVerdict(id) }, label))),
+    h('div', { className: 'ageval-kpis' }, onToggle ? h(HostCheckbox, { className: 'ageval-check', checked: selected, onChange: onToggle, label: selected ? '已加入分析' : dict.addContext }) : null, h(Metrics, { row }), h('span', { className: 'ageval-meta' }, row.status)),
+    Object.keys(data.errors).length ? h('div', { className: 'ageval-chips' }, Object.entries(data.errors).map(([name, count]) => h(HostButton, { key: name, size: 'sm', variant: bucket === name ? 'toolbar' : 'ghost', 'aria-pressed': bucket === name, onClick: () => setBucket(current => current === name ? '' : name) }, name + ' ' + count))) : null,
+    h('div', { className: 'ageval-chips' }, h(HostSegments, { id: 'ageval-task-verdict', value: verdict, onChange: setVerdict, label: 'Task 结果分组', className: 'ageval-verdict-segments', options: [['all', '全部 ' + data.tasks.length], ['pass', 'PASS ' + counts.pass], ['fail', 'FAIL ' + counts.fail], ['error', 'ERROR ' + counts.error]].map(([value, label]) => ({ value, label })) })),
+    h('p', { className: 'ageval-traj-note' }, 'Suite 创建时间：' + formatTimestamp(row.createdAt)),
     h('div', { className: 'ageval-task-tools' }, h('input', { className: 'ageval-control', value: query, placeholder: '搜索 task', onChange: (event: any) => setQuery(event.target.value) })),
     h('div', { className: 'ageval-detail-scroll' }, tasks.length ? tasks.map(task => {
       const runId = runs[task.taskId] || task.runId || '';
@@ -410,7 +429,7 @@ function DetailView({ data, selected, error, busy, onBack, onToggle, onAttempt }
         onKeyDown: (event: any) => { if (!runId || event.target.closest('input,select')) return; if (event.key === 'Enter') onAttempt(task, runId); },
       },
         h('span', { className: 'ageval-verdict ageval-verdict--' + verdictOf(task.status) }, verdictOf(task.status) === 'other' ? (task.status || '-') : verdictOf(task.status)),
-        h('div', { className: 'ageval-task-main' }, h('div', { className: 'ageval-task-id' }, task.taskId), task.errorTitle ? h('div', { className: 'ageval-subline ageval-error-text' }, task.errorTitle) : null),
+        h('div', { className: 'ageval-task-main' }, h('div', { className: 'ageval-task-id' }, task.taskId), h(TaskTime, { key: runId, task, runId, onRead: onTiming }), task.errorTitle ? h('div', { className: 'ageval-subline ageval-error-text' }, task.errorTitle) : null),
         task.score == null ? null : h('span', { className: 'ageval-metrics', title: String(task.score) }, formatScore(task.score)),
         ids.length > 1 ? h(Select, { className: 'ageval-attempt-select', value: runId, aria: 'Attempt', onChange: (value: string) => setRuns(prev => ({ ...prev, [task.taskId]: value })), options: ids.map(id => [id, id] as [string, string]) }) : null);
     }) : h('div', { className: 'ageval-empty' }, dict.noTasks)));
@@ -420,11 +439,11 @@ function SuiteList({ rows, selected, onToggle, onOpen }: { rows: Row[]; selected
     const key = row.dataset + '/' + row.suite;
     return h('div', {
       key, className: 'ageval-suite' + (selected[key] ? ' ageval-suite--selected' : ''), role: 'button', tabIndex: 0,
-      onClick: (event: any) => { if (event.target.closest('input,button')) return; onOpen(row); },
+      onClick: (event: any) => { if (event.target.closest('input,button,label')) return; onOpen(row); },
       onKeyDown: (event: any) => { if (event.target.closest('input')) return; if (event.key === 'Enter') onOpen(row); },
     },
-      h('input', { className: 'ageval-check', type: 'checkbox', checked: Boolean(selected[key]), onChange: () => onToggle(row), 'aria-label': dict.selected + ' ' + key }),
-      h('div', { className: 'ageval-suite-main' }, h('div', { className: 'ageval-suite-name' }, row.suite), h('div', { className: 'ageval-subline' }, [row.model || 'model unknown', row.harness].filter(Boolean).join('  '))),
+      h(HostCheckbox, { className: 'ageval-check ageval-check--compact', checked: Boolean(selected[key]), onChange: () => onToggle(row), label: dict.selected + ' ' + key }),
+      h('div', { className: 'ageval-suite-main' }, h('div', { className: 'ageval-suite-name' }, row.suite), h('div', { className: 'ageval-subline' }, [row.model || 'model unknown', row.harness, '创建 ' + formatTimestamp(row.createdAt)].filter(Boolean).join(' · '))),
       h('div', { className: 'ageval-suite-side' }, h(ScoreRing, { value: row.passRate }), h(Metrics, { row })));
   }));
 }
@@ -594,22 +613,34 @@ type CacheInfo = { storage: 'memory'; entries: number; bytes: number; maxEntries
 function formatBytes(bytes: number): string {
   return bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
-export function CacheSettings({ onClose }: { onClose: () => void }) {
-  const dialog = useRef<HTMLDialogElement>(null);
+export function SettingsPage() {
   const [info, setInfo] = useState<CacheInfo | null>(null);
   const [busy, setBusy] = useState(true);
   const [confirm, setConfirm] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [storage, setStorage] = useState<{ dataDir: string; defaultDir: string; settingsFile: string; custom: boolean } | null>(null);
+  const [draft, setDraft] = useState('');
+  const [saving, setSaving] = useState(false);
   const alive = useRef(true);
+
+  const loadStorage = async () => {
+    const value = await readJson(API + '/settings');
+    if (!alive.current) return;
+    setStorage(value);
+    setDraft(value.dataDir);
+  };
+
   useEffect(() => {
     alive.current = true;
-    const element = dialog.current; element?.showModal();
-    void readJson(API + '/cache').then(value => { if (alive.current) setInfo(value); })
-      .catch((cause: Error) => { if (alive.current) setError(cause.message); })
-      .finally(() => { if (alive.current) setBusy(false); });
-    return () => { alive.current = false; element?.close(); };
+    void Promise.all([
+      readJson(API + '/cache').then(value => { if (alive.current) setInfo(value); })
+        .catch((cause: Error) => { if (alive.current) setError(cause.message); }),
+      loadStorage().catch((cause: Error) => { if (alive.current) setError(cause.message); }),
+    ]).finally(() => { if (alive.current) setBusy(false); });
+    return () => { alive.current = false; };
   }, []);
+
   const action = async (clear: boolean) => {
     setBusy(true); setError(''); setMessage(''); setConfirm(false);
     try {
@@ -618,9 +649,37 @@ export function CacheSettings({ onClose }: { onClose: () => void }) {
     } catch (cause: any) { if (alive.current) setError(cause.message); }
     finally { if (alive.current) setBusy(false); }
   };
-  return h('dialog', { ref: dialog, className: 'ageval-source-dialog ageval-cache-dialog', 'aria-labelledby': 'ageval-settings-title', onCancel: onClose },
-    h('div', { className: 'ageval-modal-head' }, h('h3', { id: 'ageval-settings-title' }, '设置 · 缓存管理'), h(Button, { quiet: true, onClick: onClose, label: '关闭设置' }, '×')),
-    h('div', { className: 'ageval-cache-body' },
+
+  const saveDir = async () => {
+    setSaving(true); setError(''); setMessage('');
+    try {
+      await readJson(API + '/settings', { method: 'PUT', body: JSON.stringify({ dataDir: draft }) });
+      if (alive.current) { await loadStorage(); setMessage('已保存。重启 Host 后生效，现有数据已随设置迁移。'); }
+    } catch (cause: any) { if (alive.current) setError(cause.message); }
+    finally { if (alive.current) setSaving(false); }
+  };
+
+  const openDir = async () => {
+    setError('');
+    try { await readJson(API + '/settings/open', { method: 'POST', body: JSON.stringify({ dataDir: draft }) }); }
+    catch (cause: any) { if (alive.current) setError(cause.message); }
+  };
+
+  return h('div', { className: 'ageval-cache-body' },
+    h('section', { className: 'ageval-settings-group' },
+      h('h3', { className: 'ageval-settings-title' }, '数据目录'),
+      h('p', { className: 'ageval-cache-note' }, '追踪登记、阶段历史和来源配置都放在这里。改动会迁移现有文件，重启 Host 后生效。'),
+      h('div', { className: 'ageval-settings-row' },
+        h('input', {
+          className: 'ageval-settings-input', value: draft, spellCheck: false,
+          onChange: (event: any) => setDraft(event.target.value),
+          placeholder: storage?.defaultDir ?? '~/.dsh/ageval-viewer', 'aria-label': '数据目录',
+        }),
+        h(Button, { disabled: saving || !draft.trim() || draft === storage?.dataDir, onClick: () => void saveDir() }, saving ? '保存中…' : '保存'),
+        h(Button, { quiet: true, disabled: !draft.trim(), onClick: () => void openDir(), label: '打开数据目录' }, '打开文件夹')),
+      storage?.custom ? h('p', { className: 'ageval-cache-note' }, `默认位置：${storage.defaultDir}；设置文件：${storage.settingsFile}`) : h('p', { className: 'ageval-cache-note' }, `默认位置，未自定义。设置文件：${storage?.settingsFile ?? ''}`)),
+    h('section', { className: 'ageval-settings-group' },
+      h('h3', { className: 'ageval-settings-title' }, '缓存'),
       h('div', { className: 'ageval-cache-summary' },
         h('span', { className: 'ageval-host-name' }, '本地磁盘缓存'), h('span', null, '未启用 · 0 B')),
       h('p', { className: 'ageval-cache-note' }, '没有缓存目录可打开。远端数据仅按需传入内存，不创建本地镜像或临时证据文件。'),
@@ -637,22 +696,98 @@ export function CacheSettings({ onClose }: { onClose: () => void }) {
         h('p', null, '清理 GitHub 目录树内存缓存？下次浏览时会重新读取。'),
         h('div', { className: 'ageval-cache-actions' }, h(Button, { onClick: () => setConfirm(false) }, '取消'), h(Button, { accent: true, onClick: () => void action(true) }, '确认清理'))) : null,
       error ? h('p', { className: 'ageval-banner--error', role: 'alert' }, error) : null,
-      message ? h('p', { className: 'ageval-banner--ok', role: 'status' }, message) : null),
-    h('div', { className: 'ageval-modal-foot' },
-      h(Button, { quiet: true, disabled: busy, onClick: () => void action(false) }, '刷新状态'),
-      h(Button, { disabled: busy || !info?.entries || confirm, onClick: () => setConfirm(true) }, '清理内存缓存')));
+      message ? h('p', { className: 'ageval-banner--ok', role: 'status' }, message) : null,
+      h('div', { className: 'ageval-cache-actions' },
+        h(Button, { quiet: true, disabled: busy, onClick: () => void action(false) }, '刷新状态'),
+        h(Button, { disabled: busy || !info?.entries || confirm, onClick: () => setConfirm(true) }, '清理内存缓存'))));
+}
+
+function timeLabel(value?: string): string { return value ? new Date(value).toLocaleString(undefined, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '尚未读取'; }
+function deltaLabel(delta: any): string {
+  if (!delta) return '首次观测 · 尚无对比阶段';
+  if (!delta.comparable) return '不可直接对比：' + delta.reason;
+  const signed = (n: number | null) => n == null ? '—' : (n >= 0 ? '+' : '') + n;
+  return `净变化 P ${signed(delta.pass)} / F ${signed(delta.fail)} / E ${signed(delta.error)}`;
+}
+function TrackingPanel() {
+  const [runs, setRuns] = useState<any[]>([]), [showArchived, setShowArchived] = useState(false);
+  const [busy, setBusy] = useState(''), [error, setError] = useState('');
+  const [active, setActive] = useState<any>(null), [detail, setDetail] = useState<DetailData | null>(null), [attempt, setAttempt] = useState<Attempt | null>(null);
+  const [expanded, setExpanded] = useState(''), [label, setLabel] = useState('');
+  const alive = useRef(true), version = useRef(0);
+  const load = useCallback(async () => {
+    const result = await readJson(API + '/tracking');
+    if (alive.current) setRuns(result.runs || []);
+  }, []);
+  useEffect(() => {
+    alive.current = true; let timer: ReturnType<typeof setTimeout>;
+    const tick = async () => {
+      try { await load(); } catch (cause: any) { if (alive.current) setError(cause.message); }
+      if (alive.current) timer = setTimeout(tick, 5000);
+    };
+    void tick(); return () => { alive.current = false; version.current++; clearTimeout(timer); };
+  }, [load]);
+  const action = async (route: string, body: any) => {
+    setBusy(body.id || 'all'); setError('');
+    try { await readJson(API + '/tracking/' + route, { method: 'POST', body: JSON.stringify(body) }); await load(); }
+    catch (cause: any) { if (alive.current) setError(cause.message); }
+    finally { if (alive.current) setBusy(''); }
+  };
+  const open = async (run: any) => {
+    const request = ++version.current; setBusy(run.id); setError('');
+    try { const value = await readJson(API + '/tracking/suite?id=' + encodeURIComponent(run.id)); if (alive.current && request === version.current) { setActive(run); setDetail(value); setAttempt(null); } }
+    catch (cause: any) { if (alive.current && request === version.current) setError(cause.message); }
+    finally { if (alive.current && request === version.current) setBusy(''); }
+  };
+  const openAttempt = async (task: Task, runId: string) => {
+    const request = ++version.current; setBusy(active.id); setError('');
+    try { const value = await readJson(API + '/tracking/attempt?id=' + encodeURIComponent(active.id) + '&task=' + encodeURIComponent(task.taskId) + '&run=' + encodeURIComponent(runId)); if (alive.current && request === version.current) setAttempt(value); }
+    catch (cause: any) { if (alive.current && request === version.current) setError(cause.message); }
+    finally { if (alive.current && request === version.current) setBusy(''); }
+  };
+  if (attempt) return h(AttemptView, { attempt, onBack: () => { version.current++; setAttempt(null); setError(''); } });
+  if (detail) return h(DetailView, { data: detail, selected: false, error, busy: busy ? dict.loading : '', onBack: () => { version.current++; setDetail(null); setActive(null); setError(''); }, onAttempt: openAttempt, onTiming: (task: Task, runId: string) => readJson(API + '/tracking/timing?id=' + encodeURIComponent(active.id) + '&task=' + encodeURIComponent(task.taskId) + '&run=' + encodeURIComponent(runId)) });
+  const visible = runs.filter(run => showArchived ? run.archived : !run.archived);
+  return h('div', { className: 'ageval-tracking' },
+    h('div', { className: 'ageval-tracking-toolbar' },
+      h('span', { className: 'ageval-source-caption' }, 'Host 自动采样 · 不依赖 Agent 持续上报'),
+      h(Button, { quiet: true, onClick: () => setShowArchived(value => !value) }, showArchived ? '返回追踪中' : '已归档'),
+      h(Button, { disabled: Boolean(busy), onClick: () => void action('refresh', {}) }, busy === 'all' ? '刷新中…' : '刷新全部')),
+    h(Banner, { error }),
+    h('div', { className: 'ageval-tracking-scroll' }, visible.length ? visible.map(run => {
+      const row = run.latest?.row;
+      return h('section', { key: run.id, className: 'ageval-tracked-run' },
+        h('button', { type: 'button', className: 'ageval-tracked-open', onClick: () => void open(run), disabled: Boolean(busy) },
+          h('div', { className: 'ageval-suite-main' }, h('div', { className: 'ageval-suite-name' }, run.title), h('div', { className: 'ageval-subline' }, sourceDisplay(run.source)), h('div', { className: 'ageval-subline' }, run.dataset + ' / ' + run.suite)),
+          row ? h(ScoreRing, { value: row.passRate }) : null),
+        h('div', { className: 'ageval-tracked-progress' }, row ? h(Metrics, { row }) : h('span', null, '等待证据'), row ? h('span', null, `完成 ${(row as any).finished ?? '—'} / ${row.expected ?? '—'}`) : null),
+        h('p', { className: 'ageval-tracking-delta' }, deltaLabel(run.latest?.delta)),
+        h('p', { className: 'ageval-tracking-meta' }, `记录状态 ${row?.status || '未知'} · 最近读取 ${timeLabel(run.lastSuccess)} · ${run.refreshSeconds}s`, run.stale ? ' · 数据已过期' : '', ' · 进程存活未验证', run.latest?.revision ? ` · ${run.latest.revision.slice(0, 8)}` : ''),
+        run.readError ? h('p', { className: 'ageval-tracking-error', role: 'status' }, `${run.observation === 'waiting' ? '等待证据' : '读取失败'}：${run.readError}；保留上次结果`) : null,
+        h('div', { className: 'ageval-tracking-actions' },
+          h(Button, { disabled: Boolean(busy), onClick: () => void action('refresh', { id: run.id }) }, busy === run.id ? '读取中…' : '刷新'),
+          h(Button, { quiet: true, onClick: () => { setExpanded(value => value === run.id ? '' : run.id); setLabel(''); } }, `阶段 ${run.stages.length}`),
+          h(Button, { quiet: true, disabled: Boolean(busy), onClick: () => void action('archive', { id: run.id, archived: !run.archived }) }, run.archived ? '恢复追踪' : '归档')),
+        expanded === run.id ? h('div', { className: 'ageval-stage-history' },
+          h('form', { className: 'ageval-stage-form', onSubmit: (event: any) => { event.preventDefault(); void action('refresh', { id: run.id, label: label.trim(), checkpoint: true }); setLabel(''); } },
+            h('input', { className: 'ageval-control', value: label, maxLength: 120, placeholder: '阶段名称（可选）', 'aria-label': '阶段名称', onChange: (event: any) => setLabel(event.target.value) }),
+            h('button', { type: 'submit', className: 'ageval-button', disabled: Boolean(busy) }, '记录阶段')),
+          ...[...run.stages].reverse().map((stage: any, index: number) => h('div', { key: stage.at + index, className: 'ageval-stage-row' }, h('span', null, `${stage.label} · ${timeLabel(stage.at)}`), h(Metrics, { row: stage.row }), h('span', { className: 'ageval-source-caption' }, deltaLabel(stage.delta)), stage.delta?.transitions && Object.keys(stage.delta.transitions).length ? h('span', { className: 'ageval-source-caption' }, Object.entries(stage.delta.transitions).map(([key, count]) => `${key}: ${count}`).join(' · ')) : null))) : null);
+    }) : h('div', { className: 'ageval-empty' }, showArchived ? '没有已归档记录' : '暂无追踪记录。Agent 可调用 ageval_register_run 登记；也可在浏览结果中选择 suite 后点击“登记追踪”。')),
+    h('p', { className: 'ageval-tracking-note' }, '自动刷新默认 60 秒；有变化时每 5 分钟记录阶段，完成时立即记录。净变化不等于新增完成数；评测配置一致性未验证。归档只停止采样，不停止实验。'));
 }
 function App({ ctx, props }: { ctx: any; props: any }) {
+  const [view, setView] = useState<'browse' | 'tracking'>('browse');
   const [root, setRoot] = useState('');
   const [source, setSource] = useState<DataSource | null>(null);
   const [scope, setScope] = useState('');
   const [draftRoot, setDraftRoot] = useState('');
   const [recent, setRecent] = useState<DataSource[]>([]);
   const [sourceOpen, setSourceOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const loadVersion = useRef(0);
   const [rows, setRows] = useState([] as Row[]);
   const [query, setQuery] = useState('');
+  const [sort, setSort] = useState('time-desc');
   const [bench, setBench] = useState('all');
   const [model, setModel] = useState('all');
   const [status, setStatus] = useState('all');
@@ -691,6 +826,15 @@ function App({ ctx, props }: { ctx: any; props: any }) {
     const config = await readJson(API + '/saved/remove', { method: 'POST', body: JSON.stringify(picked) });
     setRecent(config.recent || []);
   };
+  const registerSelected = async () => {
+    if (!source) return;
+    setLoading(true); setError('');
+    try {
+      for (const row of Object.values(selected) as Row[]) await readJson(API + '/tracking/register', { method: 'POST', body: JSON.stringify({ source, dataset: row.dataset, suite: row.suite, title: [row.model, row.suite].filter(Boolean).join(' · '), reporter: sessionIdOf(ctx, props), followRef: source.kind === 'github' }) });
+      setSelected({}); setView('tracking');
+    } catch (cause: any) { setError(cause.message); }
+    finally { setLoading(false); }
+  };
   const toggle = (row: Row) => setSelected(prev => { const key = row.dataset + '/' + row.suite; const next = { ...prev }; if (next[key]) delete next[key]; else next[key] = row; return next; });
   const open = async (row: Row) => {
     setError(''); setPending('');
@@ -726,35 +870,40 @@ function App({ ctx, props }: { ctx: any; props: any }) {
     const hay = (row.dataset + ' ' + (row.model || '') + ' ' + row.suite + ' ' + (row.harness || '')).toLowerCase();
     return (!needle || hay.includes(needle)) && (bench === 'all' || row.dataset === bench) && (model === 'all' || row.model === model) && (status === 'all' || row.status === status) && (verdict === 'all' || (verdict === 'clean' ? row.clean : (row.error || 0) > 0));
   }), [rows, query, bench, model, status, verdict]);
-  const groups = useMemo(() => Array.from(new Set(filtered.map(row => row.dataset))).sort().map(name => [name, filtered.filter(row => row.dataset === name)] as [string, Row[]]), [filtered]);
+  const groups = useMemo(() => Array.from(new Set(filtered.map(row => row.dataset))).sort().map(name => [name, sortSuites(filtered.filter(row => row.dataset === name), sort)] as [string, Row[]]), [filtered, sort]);
   const filtering = Boolean(query || bench !== 'all' || model !== 'all' || status !== 'all' || verdict !== 'all');
+  if (view === 'tracking') return h('div', { className: 'ageval-viewer' },
+    h('div', { className: 'ageval-topbar' }, h('div', { className: 'ageval-heading' }, h('h2', null, 'ageval · 追踪中'), h('span', { className: 'ageval-meta' }, '只读实验数据'), h(Button, { quiet: true, onClick: () => setView('browse') }, '浏览结果'))),
+    h(TrackingPanel));
   if (attempt) return h(AttemptView, { attempt, onBack: () => { setAttempt(null); setError(''); } });
-  if (detail) return h(DetailView, { data: detail, selected: Boolean(selected[detail.row.dataset + '/' + detail.row.suite]), error, busy: pending ? dict.loading : '', onBack: () => { setDetail(null); setError(''); }, onToggle: () => toggle(detail.row), onAttempt: openAttempt });
+  if (detail) return h(DetailView, { data: detail, selected: Boolean(selected[detail.row.dataset + '/' + detail.row.suite]), error, busy: pending ? dict.loading : '', onBack: () => { setDetail(null); setError(''); }, onToggle: () => toggle(detail.row), onAttempt: openAttempt, onTiming: (task: Task, runId: string) => readJson(API + '/timing?dataset=' + encodeURIComponent(detail.row.dataset) + '&suite=' + encodeURIComponent(detail.row.suite) + '&task=' + encodeURIComponent(task.taskId) + '&run=' + encodeURIComponent(runId), undefined, scope) });
   return h('div', { className: 'ageval-viewer' },
     h('div', { className: 'ageval-topbar' },
-      h('div', { className: 'ageval-heading' }, h('h2', null, dict.title), h('span', { className: 'ageval-meta' }, (loading ? dict.loading + ' · ' : '') + dict.readOnly + ' · ' + filtered.length + '/' + rows.length), h(Button, { quiet: true, onClick: () => void load(), disabled: loading }, dict.refresh), h(Button, { quiet: true, onClick: () => setSettingsOpen(true), label: '打开设置' }, '设置')),
+      h('div', { className: 'ageval-heading' }, h('h2', null, dict.title), h('span', { className: 'ageval-meta' }, (loading ? dict.loading + ' · ' : '') + dict.readOnly + ' · ' + filtered.length + '/' + rows.length), h(Button, { quiet: true, onClick: () => setView('tracking') }, '追踪中'), h(Button, { quiet: true, onClick: () => void load(), disabled: loading }, dict.refresh)),
       h('div', { className: 'ageval-root-row' },
         h('button', { type: 'button', className: 'ageval-source-display', onClick: () => setSourceOpen(true), title: source ? sourceDisplay(source) : undefined },
           icon(source?.kind === 'ssh' ? 'terminal' : 'grid'), h('span', null, source ? sourceDisplay(source) : '选择数据源'), icon('chevron')),
         recent.length ? h(Select, { className: 'ageval-recent-select', value: '', placeholder: '最近路径', aria: '最近路径', disabled: loading, onChange: (value: string) => { const item = recent[Number(value)]; if (item) void chooseSource(item).catch((e: Error) => setError(e.message)); }, options: recent.map((item, index) => [String(index), sourceDisplay(item)] as [string, string]) }) : null),
-      h('input', { className: 'ageval-control ageval-filter-search', value: query, placeholder: dict.search, onChange: (event: any) => setQuery(event.target.value) }),
+      h(HostInput, { className: 'ageval-search-input', icon: icon('search'), value: query, placeholder: dict.search, 'aria-label': dict.search, onChange: (event: any) => setQuery(event.target.value) }),
       h('div', { className: 'ageval-filter-row' },
         h('div', { className: 'ageval-filter-select' }, h(Select, { value: bench, onChange: setBench, aria: 'Bench', options: [['all', dict.allBenches], ...benches.map(item => [item, benchLabel(item, root)] as [string, string])] })),
         h('div', { className: 'ageval-filter-select' }, h(Select, { value: model, onChange: setModel, aria: 'Model', options: [['all', dict.allModels], ...models.map(item => [item, item] as [string, string])] })),
         h('div', { className: 'ageval-filter-select' }, h(Select, { value: status, onChange: setStatus, aria: 'Status', options: [['all', dict.allStatuses], ...Array.from(new Set(rows.map(item => item.status))).sort().map(item => [item, item] as [string, string])] })),
         h('div', { className: 'ageval-filter-select' }, h(Select, { value: verdict, onChange: setVerdict, aria: 'Result', options: [['all', dict.allVerdicts], ['clean', dict.clean], ['error', dict.hasErrors]] })),
         filtering ? h(Button, { quiet: true, onClick: () => { setQuery(''); setBench('all'); setModel('all'); setStatus('all'); setVerdict('all'); } }, dict.clear) : null)),
-    h('div', { className: 'ageval-summary' }, h('strong', null, filtered.length + ' ' + dict.suites), h('span', null, filtered.reduce((sum, row) => sum + (row.expected || 0), 0) + ' ' + dict.tasksCount)),
+    h('div', { className: 'ageval-summary' }, h('strong', null, filtered.length + ' ' + dict.suites), h('span', null, filtered.reduce((sum, row) => sum + (row.expected || 0), 0) + ' ' + dict.tasksCount),
+      h(Select, { className: 'ageval-sort-select', value: sort, onChange: setSort, aria: 'Suite 排序（各 bench 内）', options: [['time-desc', '创建时间 · 最新在前'], ['time-asc', '创建时间 · 最早在前'], ['rate-desc', '通过率 · 从高到低'], ['rate-asc', '通过率 · 从低到高'], ['name-asc', 'Suite 名称 · 升序']] })),
     !root ? h('div', { className: 'ageval-empty' }, dict.noRoot) : h('div', { className: 'ageval-scroll' }, loading && !rows.length ? h('div', { className: 'ageval-empty' }, dict.loading) : groups.length ? groups.map(([name, items]) => h('section', { key: name, className: 'ageval-group' }, h('div', { className: 'ageval-group-title' }, benchLabel(name, root), h('span', { className: 'ageval-group-count' }, items.length + ' ' + dict.suites)), h(SuiteList, { rows: items, selected, onToggle: toggle, onOpen: open }))) : h('div', { className: 'ageval-empty' }, dict.empty)),
     h(Banner, { error, message }),
     h('div', { className: 'ageval-composer' },
       h('input', { className: 'ageval-control', value: question, placeholder: dict.question, onChange: (event: any) => setQuestion(event.target.value), onKeyDown: (event: any) => { if (event.key === 'Enter') { event.preventDefault(); void send('current'); } } }),
       h('div', { className: 'ageval-composer-actions' },
         h(Button, { quiet: true, onClick: () => setSelectionOpen(true), disabled: !Object.keys(selected).length }, Object.keys(selected).length + ' ' + dict.selected),
+        h(Button, { onClick: () => void registerSelected(), disabled: loading || !Object.keys(selected).length }, '登记追踪'),
         h(Button, { onClick: () => void send('current'), disabled: loading }, dict.send),
         h(Button, { onClick: () => void send('new'), disabled: loading }, dict.newSession))),
     sourceOpen ? h(SourcePicker, { source, recent, onChoose: chooseSource, onRemove: removeSavedSource, onClose: () => setSourceOpen(false) }) : null,
-    settingsOpen ? h(CacheSettings, { onClose: () => setSettingsOpen(false) }) : null, selectionOpen ? h('div', { className: 'ageval-modal-backdrop', role: 'presentation', onClick: () => setSelectionOpen(false) }, h('div', { className: 'ageval-modal', role: 'dialog', 'aria-modal': true, onClick: (event: any) => event.stopPropagation() },
+    selectionOpen ? h('div', { className: 'ageval-modal-backdrop', role: 'presentation', onClick: () => setSelectionOpen(false) }, h('div', { className: 'ageval-modal', role: 'dialog', 'aria-modal': true, onClick: (event: any) => event.stopPropagation() },
       h('div', { className: 'ageval-modal-head' }, h('h3', null, dict.selected + ' ' + dict.suites), h(Button, { quiet: true, onClick: () => setSelectionOpen(false), label: '关闭' }, '×')),
       h('div', { className: 'ageval-modal-list' }, (Object.entries(selected) as [string, Row][]).map(([key, row]) => h('div', { key, className: 'ageval-selected-row' }, h('span', { className: 'ageval-task-id' }, key), h(ScoreRing, { value: row.passRate }), h(Button, { quiet: true, onClick: () => toggle(row) }, '取消')))),
       h('div', { className: 'ageval-modal-foot' }, h(Button, { accent: true, onClick: () => setSelectionOpen(false) }, '完成')))) : null);
@@ -766,8 +915,16 @@ function apply(ctx: any): void {
   injectCss();
   const tabs = get(ctx, 'sidebarRightTabs');
   const slots = get(ctx, 'slots');
-  if (!tabs || !slots) return;
   try { ctx.locale?.register?.(NS, { zh, en: zh }); } catch { /* locale is optional */ }
+  // The settings page is useful without the sidebar tab, so it registers first.
+  if (slots) ctx.effect(() => slots.inject('settings.section', () => slots.register({
+    name: 'settings.section',
+    id: 'ageval-viewer',
+    order: 60,
+    locale: NS,
+    label: () => 'ageval 评测追踪',
+  }, () => h(SettingsPage, null))));
+  if (!tabs || !slots) return;
   ctx.effect(() => tabs.register({ id: TAB_ID, kind: 'fstack.ageval', title, guide: [{ id: TAB_ID, order: 32, title, description: () => dict.guide }] }));
   ctx.effect(() => slots.inject('sidebar.right.pane.tab', () => slots.register({ name: 'sidebar.right.pane.tab', key: TAB_ID }, (slotProps: any) => h(App, { ctx, props: slotProps }))));
 }

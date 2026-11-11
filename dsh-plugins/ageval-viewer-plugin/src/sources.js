@@ -1,3 +1,6 @@
+import { timingOf } from './display.js';
+import { remoteRead } from './remote.js';
+import { taskTiming } from './evidence.js';
 import { github, githubSource, githubLabel } from './github.js';
 import { randomUUID } from 'node:crypto';
 import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
@@ -54,6 +57,11 @@ export async function sourceState(file) {
       queue = pending.catch(() => {}); return pending;
     },
   };
+}
+export async function readTaskTiming(source, dataset, suite, task, run) {
+  if (source.kind === 'github') return github.timing(source, dataset, suite, task, run);
+  if (source.kind === 'ssh') return { ...timingOf(await remoteRead(source.host, { op: 'timing', path: source.path, dataset, suite, task, run })), runId: run };
+  return taskTiming(source.path, dataset, suite, task, run);
 }
 export function readSuites(source) { return source.kind === 'github' ? github.suites(source) : source.kind === 'ssh' ? remoteSuites(source) : listSuites(source.path); }
 export function readSuite(source, dataset, suite) { return source.kind === 'github' ? github.suite(source, dataset, suite) : source.kind === 'ssh' ? remoteSuite(source, dataset, suite) : suiteDetail(source.path, dataset, suite); }

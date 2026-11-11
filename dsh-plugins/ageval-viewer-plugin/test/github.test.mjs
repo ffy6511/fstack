@@ -49,6 +49,13 @@ test('GitHub reader browses metadata and reads only selected evidence, never box
   await assert.rejects(reader.suite(resolved, '..', 'suite'), /Invalid/);
 });
 
+test('GitHub timing reads summaries only and rejects unrelated attempts', async () => {
+  const { reader, source, calls } = fixture();
+  assert.equal((await reader.timing(source, '.', 'suite', 'task', 'run')).durationMs, null);
+  assert.equal(calls.some(p => p.includes('/git/blobs/') && !p.endsWith('/summary') && !p.endsWith('/run-summary')), false);
+  await assert.rejects(reader.timing(source, '.', 'suite', 'task', 'other-run'), /does not belong/);
+});
+
 test('GitHub avatars only use the public GitHub avatar host', () => {
   assert.equal(githubAvatarUrl('https://avatars.githubusercontent.com/u/42?v=4'), 'https://avatars.githubusercontent.com/u/42?v=4&s=80');
   for (const url of [null, '', 'javascript:alert(1)', 'https://evil.test/image', 'http://avatars.githubusercontent.com/u/42', 'https://user:password@avatars.githubusercontent.com/u/42']) assert.equal(githubAvatarUrl(url), null);

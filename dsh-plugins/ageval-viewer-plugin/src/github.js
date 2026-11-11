@@ -1,3 +1,4 @@
+import { timingOf } from './display.js';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { EvidenceError, rowOf, detailOf, redact, segment } from './evidence.js';
@@ -199,6 +200,16 @@ export function githubReader(api = githubApi) {
       return { rows, warnings, revision: snap.source.commit };
     },
     async suite(source, dataset, suite) { const snap = await root(source); const d = await docs(snap, dataset, suite); return detailOf(dataset, suite, d.summary, d.progress); },
+    async timing(source, dataset, suite, taskId, requestedRun) {
+      segment(taskId);
+      const snap = await root(source), d = await docs(snap, dataset, suite);
+      const task = detailOf(dataset, suite, d.summary, d.progress).tasks.find(t => t.taskId === taskId);
+      const runId = requestedRun || task?.runId; segment(runId);
+      if (!task?.runIds.includes(runId)) throw new EvidenceError('Attempt does not belong to task', 403);
+      let value = await optional(snap.source.repo, snap.root, join(dataset, '.ageval/runs', runId, 'summary.json'), CAP);
+      if (!value) value = await optional(snap.source.repo, snap.root, join(dataset, 'tasks', taskId, '.ageval/runs', runId, 'summary.json'), CAP);
+      return { ...timingOf(value ? JSON.parse(value.text) : {}), runId };
+    },
     async attempt(source, dataset, suite, taskId, requestedRun) {
       segment(taskId);
       const snap = await root(source), repo = snap.source.repo, d = await docs(snap, dataset, suite);

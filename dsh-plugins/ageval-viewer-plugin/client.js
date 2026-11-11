@@ -25,7 +25,7 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // src/client.tsx
 var client_exports = {};
 __export(client_exports, {
-  CacheSettings: () => CacheSettings,
+  SettingsPage: () => SettingsPage,
   SourcePicker: () => SourcePicker,
   apply: () => apply,
   default: () => client_default,
@@ -33,6 +33,38 @@ __export(client_exports, {
   name: () => pluginName
 });
 module.exports = __toCommonJS(client_exports);
+
+// src/display.js
+function timestamp(value) {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const milliseconds = Date.parse(value);
+  return Number.isFinite(milliseconds) ? new Date(milliseconds).toISOString() : null;
+}
+function sortSuites(rows, order = "time-desc") {
+  const descending = order.endsWith("-desc");
+  const value = (row) => order.startsWith("rate-") ? typeof row.passRate === "number" && Number.isFinite(row.passRate) ? row.passRate : null : order.startsWith("time-") ? timestamp(row.createdAt) ? Date.parse(row.createdAt) : null : row.suite;
+  return [...rows].sort((a, b) => {
+    const x = value(a), y = value(b);
+    if (x == null && y != null) return 1;
+    if (y == null && x != null) return -1;
+    const comparison = x == null ? 0 : typeof x === "number" ? x - y : String(x).localeCompare(String(y));
+    return (descending ? -comparison : comparison) || `${a.dataset}/${a.suite}`.localeCompare(`${b.dataset}/${b.suite}`);
+  });
+}
+function formatTimestamp(value) {
+  const valid = timestamp(value);
+  return valid ? new Date(valid).toLocaleString(void 0, { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }) : "\u65F6\u95F4\u672A\u8BB0\u5F55";
+}
+function formatDuration(ms) {
+  if (typeof ms !== "number" || !Number.isFinite(ms) || ms < 0) return "\u8017\u65F6\u672A\u8BB0\u5F55";
+  const seconds = Math.floor(ms / 1e3);
+  if (seconds < 60) return seconds + " \u79D2";
+  if (seconds < 3600) return Math.floor(seconds / 60) + " \u5206 " + seconds % 60 + " \u79D2";
+  return Math.floor(seconds / 3600) + " \u5C0F\u65F6 " + Math.floor(seconds % 3600 / 60) + " \u5206";
+}
+
+// src/client.tsx
+var import_dsh_client_ui_primitives = require("@deepseek-ai/dsh-client-ui-primitives");
 
 // src/select.tsx
 var import_react = require("react");
@@ -398,7 +430,7 @@ function inheritedCut(steps) {
 var API = "/fstack-ageval/api";
 var TAB_ID = "fstack-ageval-viewer";
 var NS = "fstack-ageval-viewer";
-var STYLE_TEXT = ":root {\n  --ageval-surface: var(--surface-1, #fff);\n  --ageval-surface-soft: var(--surface-0, #f7f8fa);\n  --ageval-text: var(--text-primary, #17191f);\n  --ageval-text-secondary: var(--text-secondary, #5c6270);\n  --ageval-text-muted: var(--text-muted, #858b99);\n  --ageval-border: var(--border, #d7dbe2);\n  --ageval-border-strong: var(--border-strong, #aeb5c1);\n  --ageval-accent: var(--text-accent, #1b54e8);\n  --ageval-success: var(--text-success, #27754b);\n  --ageval-warning: var(--text-warning, #a15f16);\n  --ageval-danger: var(--text-danger, #c53737);\n  --ageval-radius: var(--radius, 8px);\n}\n.ageval-viewer, .ageval-detail { display: flex; flex-direction: column; width: 100%; max-width: 1120px; margin-inline: auto; height: 100%; min-height: 0; min-width: 0; box-sizing: border-box; --ageval-inset: clamp(12px, 2vw, 20px); color: var(--ageval-text); font-family: var(--font-sans, system-ui, sans-serif); font-size: 13px; line-height: 1.45; }\n.ageval-viewer { position: relative; }\n.ageval-viewer *, .ageval-viewer *::before, .ageval-viewer *::after, .ageval-detail *, .ageval-detail *::before, .ageval-detail *::after { box-sizing: border-box; }\n.ageval-viewer button, .ageval-viewer input, .ageval-viewer select, .ageval-detail button, .ageval-detail input, .ageval-detail select { font: inherit; color: inherit; }\n.ageval-topbar { display: flex; flex-direction: column; gap: 8px; padding: 12px var(--ageval-inset) 10px; border-bottom: 0.5px solid var(--ageval-border); background: var(--ageval-surface); }\n.ageval-heading { display: flex; align-items: center; gap: 8px; min-width: 0; }\n.ageval-heading h2, .ageval-detail-head h3, .ageval-modal-head h3 { margin: 0; font-weight: 500; }\n.ageval-heading h2 { font-size: 16px; line-height: 1.2; }\n.ageval-meta, .ageval-group-count, .ageval-traj-count { margin-left: auto; color: var(--ageval-text-muted); font-family: var(--font-mono, ui-monospace, monospace); font-size: 11px; font-weight: 400; }\n.ageval-root-row, .ageval-filter-row, .ageval-composer-actions, .ageval-detail-head, .ageval-kpis, .ageval-chips { display: flex; align-items: center; gap: 6px; min-width: 0; }\n.ageval-topbar > .ageval-root-row { display: grid; grid-template-columns: minmax(0, 1fr) clamp(100px, 24%, 160px); gap: 8px; width: 100%; }\n.ageval-topbar > .ageval-root-row:has(> :only-child) { grid-template-columns: minmax(0, 1fr); }\n.ageval-source-display { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; min-height: 32px; padding: 6px 10px; overflow: hidden; border: .5px solid var(--ageval-border); border-radius: var(--ageval-radius); background: transparent; cursor: pointer; text-align: left; }\n.ageval-source-display > span { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono, ui-monospace, monospace); font-size: 11px; }\n.ageval-source-display > svg { display: block; flex: 0 0 14px; width: 14px; height: 14px; min-width: 14px; }\n.ageval-viewer .ageval-recent-select { width: 100%; min-width: 0; max-width: 160px; }\n.ageval-select-control { display: inline-flex; width: 100%; min-width: 0; vertical-align: middle; }\n.ageval-viewer .ageval-select-trigger, .ageval-detail .ageval-select-trigger { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; min-height: 32px; padding: 6px 10px; border: .5px solid var(--ageval-border); border-radius: var(--ageval-radius); background: var(--ageval-surface); color: var(--ageval-text); font: inherit; font-size: 12px; line-height: 18px; cursor: pointer; text-align: left; }\n.ageval-select-value { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }\n.ageval-select-chevron { flex: 0 0 6px; width: 6px; height: 6px; margin: -3px 2px 0 0; border-right: 1.5px solid var(--ageval-text-muted); border-bottom: 1.5px solid var(--ageval-text-muted); transform: rotate(45deg); }\n.ageval-select-trigger[aria-expanded=\"true\"] .ageval-select-chevron { transform: translateY(3px) rotate(225deg); }\n.ageval-select-trigger:hover:not(:disabled), .ageval-select-trigger[aria-expanded=\"true\"] { border-color: var(--ageval-border-strong); background: var(--ageval-surface-soft); }\n.ageval-select-trigger:focus-visible { outline: 2px solid color-mix(in srgb, var(--ageval-accent) 35%, transparent); outline-offset: 2px; }\n.ageval-select-trigger:disabled { cursor: not-allowed; opacity: .5; }\n.ageval-select-menu[popover] { position: fixed; inset: auto; box-sizing: border-box; margin: 0; padding: 5px; border: .5px solid var(--ageval-border-strong); border-radius: 10px; background: var(--ageval-surface); color: var(--ageval-text); font: 12px/1.45 var(--font-sans, system-ui, sans-serif); overflow: auto; overscroll-behavior: contain; max-width: calc(100vw - 20px); box-shadow: none; }\n.ageval-select-menu::backdrop { background: transparent; }\n.ageval-select-menu *, .ageval-select-menu *::before { box-sizing: border-box; }\n.ageval-select-option { display: flex; align-items: flex-start; gap: 9px; min-height: 32px; padding: 7px 9px; border-radius: 6px; cursor: pointer; }\n.ageval-select-option.is-active { background: var(--ageval-surface-soft); }\n.ageval-select-option[aria-selected=\"true\"] { font-weight: 500; }\n.ageval-select-option-text { min-width: 0; flex: 1; overflow-wrap: anywhere; }\n.ageval-select-check { flex: 0 0 12px; width: 12px; height: 14px; position: relative; }\n.ageval-select-check.is-checked::before { content: ''; position: absolute; top: 2px; left: 3px; width: 5px; height: 9px; border-right: 1.5px solid var(--ageval-accent); border-bottom: 1.5px solid var(--ageval-accent); transform: rotate(45deg); }\n.ageval-attempt-select { flex: 0 0 110px; max-width: 28%; }\n.ageval-attempt-select .ageval-select-trigger { font-family: var(--font-mono, ui-monospace, monospace); font-size: 11px; }\n\n.ageval-source-display:hover { border-color: var(--ageval-border-strong); background: var(--ageval-surface-soft); }\n.ageval-source-display:focus-visible { outline: 2px solid var(--ageval-accent); outline-offset: 2px; }\n.ageval-source-dialog { width: min(720px, calc(100vw - 32px)); max-height: min(760px, 90vh); margin: auto; padding: 0; border: .5px solid var(--ageval-border-strong); border-radius: 12px; background: var(--ageval-surface); color: var(--ageval-text); font: 13px/1.45 var(--font-sans, system-ui, sans-serif); overflow: auto; }\n.ageval-source-dialog::backdrop { background: rgb(0 0 0 / 25%); }\n.ageval-source-dialog *, .ageval-source-dialog *::before { box-sizing: border-box; }\n.ageval-source-dialog button, .ageval-source-dialog input { font: inherit; color: inherit; }\n.ageval-source-tabs { display: flex; gap: 18px; padding: 0 16px; overflow-x: auto; border-bottom: .5px solid var(--ageval-border); }\n.ageval-github-picker { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }\n.ageval-github-auth { display: flex; align-items: center; justify-content: space-between; gap: 12px; }\n.ageval-github-auth p { margin: 4px 0 0; }\n.ageval-github-identity { display: flex; align-items: center; gap: 10px; min-width: 0; }\n.ageval-github-account { min-width: 0; }\n.ageval-github-avatar { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 32px; width: 32px; height: 32px; overflow: hidden; border: .5px solid var(--ageval-border); border-radius: 50%; background: var(--ageval-surface-soft); color: var(--ageval-text-muted); }\n.ageval-github-avatar img { display: block; width: 32px; height: 32px; object-fit: cover; }\n.ageval-cache-dialog { width: min(560px, calc(100vw - 32px)); }\n.ageval-cache-body { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; }\n.ageval-cache-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 10px; border: .5px solid var(--ageval-border); border-radius: 8px; background: var(--ageval-surface-soft); font-family: var(--font-mono, ui-monospace, monospace); font-size: 11px; }\n.ageval-cache-summary .ageval-host-name { font-family: var(--font-sans, system-ui, sans-serif); font-size: 12px; }\n.ageval-cache-note { margin: 0; color: var(--ageval-text-secondary); font-size: 12px; line-height: 1.6; }\n.ageval-cache-policies { display: grid; gap: 7px; margin: 0; }\n.ageval-cache-policies div { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 8px; padding-bottom: 7px; border-bottom: .5px solid var(--ageval-border); font-size: 12px; }\n.ageval-cache-policies div:last-child { border-bottom: 0; padding-bottom: 0; }\n.ageval-cache-policies dt { color: var(--ageval-text); font-weight: 500; }\n.ageval-cache-policies dd { margin: 0; color: var(--ageval-text-secondary); }\n.ageval-cache-confirm { padding: 9px 10px; border: .5px solid var(--ageval-warning); border-radius: 8px; background: var(--ageval-surface-soft); }\n.ageval-cache-confirm p { margin: 0; font-size: 12px; }\n.ageval-cache-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 9px; }\n.ageval-github-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, .65fr); gap: 10px; align-items: end; }\n.ageval-github-form label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; }\n.ageval-github-path { grid-column: 1 / -1; }\n.ageval-github-tree { display: flex; flex-direction: column; gap: 9px; min-width: 0; }\n.ageval-github-login { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; padding: 10px; border: .5px solid var(--ageval-border); border-radius: 8px; }\n.ageval-github-login code { font: 14px var(--font-mono, monospace); letter-spacing: .08em; }\n.ageval-github-login a { color: var(--ageval-accent); text-decoration: none; }\n.ageval-github-picker > .ageval-source-caption { margin: 0; }\n@media (max-width: 480px) { .ageval-github-form { grid-template-columns: minmax(0, 1fr); } .ageval-github-auth { align-items: flex-start; flex-direction: column; } }\n.ageval-source-tabs .ageval-tab { padding: 10px 0; white-space: nowrap; }\n.ageval-source-tabs .ageval-tab:disabled { opacity: .5; cursor: wait; }\n.ageval-saved-paths { padding: 12px 16px; min-height: 220px; }\n.ageval-saved-paths > .ageval-source-caption { margin: 0 0 10px; }\n.ageval-saved-path-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: .5px solid var(--ageval-border); }\n.ageval-saved-path-row:last-child { border-bottom: 0; }\n.ageval-saved-path-open { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; padding: 6px 4px; border: 0; border-radius: 6px; background: transparent; text-align: left; cursor: pointer; }\n.ageval-saved-path-open:hover { background: var(--ageval-surface-soft); }\n.ageval-saved-path-info { display: flex; flex-direction: column; gap: 3px; min-width: 0; }\n.ageval-saved-path-name { font-weight: 500; }\n.ageval-saved-path-location { font: 11px/1.5 var(--font-mono, ui-monospace, monospace); color: var(--ageval-text-secondary); overflow-wrap: anywhere; }\n.ageval-source-dialog .ageval-saved-path-remove { flex: 0 0 auto; padding: 6px 8px; border: .5px solid var(--ageval-border); border-radius: 6px; background: transparent; color: var(--ageval-danger); cursor: pointer; font-size: 12px; }\n.ageval-saved-path-remove:hover:not(:disabled) { border-color: var(--ageval-danger); }\n.ageval-saved-path-open:disabled, .ageval-saved-path-remove:disabled { opacity: .5; cursor: wait; }\n.ageval-saved-path-open:focus-visible, .ageval-saved-path-remove:focus-visible { outline: 2px solid var(--ageval-accent); outline-offset: 2px; }\n.ageval-source-caption { color: var(--ageval-text-muted); font-size: 11px; }\n.ageval-saved-source { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: .5px solid var(--ageval-border); border-radius: 6px; padding: 4px 7px; background: transparent; cursor: pointer; }\n.ageval-source-local { display: flex; flex-direction: column; gap: 9px; padding: 12px; }\n.ageval-source-ssh { display: grid; grid-template-columns: minmax(130px, 36%) minmax(0, 1fr); min-height: 260px; border-top: .5px solid var(--ageval-border); }\n.ageval-host-list { max-height: 400px; overflow: auto; border-right: .5px solid var(--ageval-border); }\n.ageval-host-row { display: flex; flex-direction: column; gap: 2px; width: 100%; border: 0; border-bottom: .5px solid var(--ageval-border); padding: 9px 10px; text-align: left; background: transparent; cursor: pointer; }\n.ageval-host-row:hover, .ageval-host-row.is-selected, .ageval-tree-row:hover { background: var(--ageval-surface-soft); }\n.ageval-host-name { font-weight: 500; }\n.ageval-host-meta { font: 11px var(--font-mono, ui-monospace, monospace); color: var(--ageval-text-muted); overflow-wrap: anywhere; }\n.ageval-tree { min-width: 0; padding: 10px; display: flex; flex-direction: column; gap: 8px; }\n.ageval-tree-location { display: flex; align-items: center; gap: 5px; }\n.ageval-tree-location input { min-width: 0; flex: 1; }\n.ageval-tree-entries { overflow: auto; max-height: 300px; }\n.ageval-tree-row { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; padding: 7px 5px; background: transparent; border: 0; border-bottom: .5px solid var(--ageval-border); cursor: pointer; overflow-wrap: anywhere; }\n.ageval-source-dialog .ageval-modal-foot .ageval-button { margin-left: auto; }\n.ageval-root-path { min-width: 0; flex: 1; overflow: hidden; color: var(--ageval-text-secondary); font-family: var(--font-mono, ui-monospace, monospace); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }\n.ageval-control, .ageval-select, .ageval-button { min-height: 30px; border: 0.5px solid var(--ageval-border); border-radius: var(--ageval-radius); background: var(--ageval-surface); }\n.ageval-control, .ageval-select { width: 100%; padding: 5px 8px; outline: none; }\n.ageval-control:focus, .ageval-select:focus, .ageval-suite:focus-visible, .ageval-task:focus-visible, .ageval-icon-btn:focus-visible, .ageval-tab:focus-visible, .ageval-chip:focus-visible, .ageval-outline-btn:focus-visible { border-color: var(--ageval-border-strong); outline: 2px solid color-mix(in srgb, var(--ageval-accent) 35%, transparent); outline-offset: 1px; }\n.ageval-button { padding: 4px 9px; cursor: pointer; white-space: nowrap; }\n.ageval-button:hover:not(:disabled), .ageval-icon-btn:hover { border-color: var(--ageval-border-strong); background: var(--ageval-surface-soft); }\n.ageval-button:disabled { cursor: not-allowed; opacity: 0.5; }\n.ageval-button--accent { border-color: var(--ageval-accent); color: var(--ageval-accent); }\n.ageval-button--quiet { border-color: transparent; background: transparent; color: var(--ageval-text-secondary); }\n.ageval-filter-search { width: 100%; }\n.ageval-filter-row { overflow-x: auto; padding-bottom: 1px; }\n.ageval-filter-select { flex: 0 0 auto; width: 128px; }\n.ageval-summary { display: flex; align-items: center; gap: 10px; min-height: 22px; padding: 0 var(--ageval-inset); color: var(--ageval-text-secondary); font-family: var(--font-mono, ui-monospace, monospace); font-size: 11px; font-variant-numeric: tabular-nums; }\n.ageval-summary strong { color: var(--ageval-text); font-weight: 500; }\n.ageval-scroll, .ageval-detail-scroll { min-height: 0; flex: 1; overflow: auto; }\n.ageval-scroll { padding: 0 var(--ageval-inset) 10px; }\n.ageval-detail-scroll { padding: 6px var(--ageval-inset) 12px; scrollbar-gutter: stable; }\n.ageval-group { margin-top: 8px; }\n.ageval-group-title { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 8px; min-height: 28px; border-bottom: 0.5px solid var(--ageval-border); background: var(--ageval-surface); font-size: 12px; font-weight: 500; }\n.ageval-suite, .ageval-task { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; padding: 9px 8px; border: 0; border-bottom: 0.5px solid var(--ageval-border); background: transparent; text-align: left; cursor: pointer; }\n.ageval-suite:hover, .ageval-task:hover, .ageval-suite--selected { background: color-mix(in srgb, var(--ageval-surface-soft) 80%, transparent); }\n.ageval-suite-main, .ageval-task-main, .ageval-step-main { min-width: 0; flex: 1; }\n.ageval-step-main { display: flex; align-items: center; gap: 6px; }\n.ageval-suite-name, .ageval-task-id, .ageval-step-label, .ageval-outline-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }\n.ageval-suite-name { font-weight: 500; }\n.ageval-subline, .ageval-detail-sub, .ageval-metrics { color: var(--ageval-text-secondary); font-family: var(--font-mono, ui-monospace, monospace); font-size: 11px; }\n.ageval-subline { overflow: hidden; margin-top: 1px; text-overflow: ellipsis; white-space: nowrap; }\n.ageval-suite-side, .ageval-step-side { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }\n.ageval-metrics { font-variant-numeric: tabular-nums; white-space: nowrap; }\n.ageval-ring { display: inline-flex; align-items: center; gap: 4px; color: var(--ageval-accent); font-family: var(--font-mono, ui-monospace, monospace); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }\n.ageval-ring-svg { display: block; transform: rotate(-90deg); }\n.ageval-ring-track { stroke: var(--ageval-border); }\n.ageval-ring-fill { stroke: var(--ageval-accent); }\n.ageval-ring-label { color: var(--ageval-text); }\n.ageval-check { flex: 0 0 auto; margin: 0; }\n.ageval-composer { display: flex; flex-direction: column; gap: 6px; padding: 10px var(--ageval-inset); border-top: 0.5px solid var(--ageval-border); background: var(--ageval-surface); }\n.ageval-composer-actions { justify-content: flex-end; }\n.ageval-composer-actions .ageval-button:first-child { margin-right: auto; }\n.ageval-banner { margin: 0 12px 8px; font-size: 12px; }\n.ageval-banner--error { color: var(--ageval-danger); }\n.ageval-banner--ok { color: var(--ageval-success); }\n.ageval-empty, .ageval-step-empty { padding: 28px 12px; color: var(--ageval-text-muted); text-align: center; }\n.ageval-step-empty { padding: 8px 12px; text-align: left; font-size: 12px; }\n.ageval-detail-head { padding: 10px var(--ageval-inset); border-bottom: 0.5px solid var(--ageval-border); }\n.ageval-detail-head h3 { flex: 1; overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }\n.ageval-detail-title { min-width: 0; flex: 1; }\n.ageval-back { width: 28px; padding: 4px 0; }\n.ageval-kpis { padding: 8px var(--ageval-inset) 0; color: var(--ageval-text-secondary); font-family: var(--font-mono, ui-monospace, monospace); font-size: 11px; }\n.ageval-chips { flex-wrap: wrap; padding: 8px var(--ageval-inset) 0; }\n.ageval-chip { min-height: 24px; padding: 2px 8px; border: 0.5px solid var(--ageval-border); border-radius: 999px; background: transparent; color: var(--ageval-text-secondary); cursor: pointer; font-size: 11px; }\n.ageval-chip--on { border-color: var(--ageval-text); color: var(--ageval-text); }\n.ageval-task-tools { display: flex; flex-direction: column; gap: 6px; padding: 8px var(--ageval-inset) 0; }\n.ageval-verdict { flex: 0 0 auto; width: 46px; font-family: var(--font-mono, ui-monospace, monospace); font-size: 10px; font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; }\n.ageval-verdict--pass { color: var(--ageval-success); }\n.ageval-verdict--fail { color: var(--ageval-danger); }\n.ageval-verdict--error { color: var(--ageval-warning); }\n.ageval-verdict--other { color: var(--ageval-text-muted); }\n.ageval-error-text { color: var(--ageval-danger); }\n.ageval-tabs { display: flex; gap: 14px; padding: 0 12px; border-bottom: 0.5px solid var(--ageval-border); }\n.ageval-tab { margin-bottom: -0.5px; padding: 7px 0; border: 0; border-bottom: 1px solid transparent; background: transparent; color: var(--ageval-text-muted); cursor: pointer; }\n.ageval-tab--on { border-bottom-color: var(--ageval-text); color: var(--ageval-text); font-weight: 500; }\n.ageval-traj-note { margin: 0; padding: 6px 12px 0; color: var(--ageval-text-muted); font-size: 11px; }\n.ageval-traj-bar { display: flex; align-items: center; gap: 6px; padding: 6px 12px; }\n.ageval-traj-filter { width: auto; min-width: 92px; min-height: 28px; }\n.ageval-traj-wrap { display: flex; flex-direction: column; min-height: 0; flex: 1; }\n.ageval-traj-host { display: flex; flex-direction: column; min-height: 0; flex: 1; }\n.ageval-traj-stage { position: relative; display: flex; min-height: 0; flex: 1; }\n.ageval-trace-port { min-height: 0; flex: 1; overflow: auto; padding: 0 28px 12px 12px; }\n.ageval-invoke { position: sticky; top: 0; z-index: 3; display: flex; align-items: baseline; gap: 8px; padding: 6px 0 4px; background: var(--ageval-surface); font-size: 12px; font-weight: 500; }\n.ageval-step { margin-bottom: 8px; border: 0.5px solid var(--ageval-border); border-radius: var(--ageval-radius); background: var(--ageval-surface); }\n.ageval-step--observation { background: color-mix(in srgb, var(--ageval-surface-soft) 65%, var(--ageval-surface)); }\n.ageval-step-head { position: sticky; top: var(--traj-invoke-h, 0px); z-index: 2; display: flex; align-items: center; gap: 6px; min-height: 32px; padding: 6px 8px; border-bottom: 0.5px solid var(--ageval-border); background: var(--ageval-surface); }\n.ageval-step--observation .ageval-step-head { background: color-mix(in srgb, var(--ageval-surface-soft) 65%, var(--ageval-surface)); }\n.ageval-step-label { display: flex; align-items: center; gap: 5px; min-width: 0; flex: 1 1 auto; font-size: 12px; font-weight: 600; }\n.ageval-step-label > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }\n.ageval-step-label--user { color: var(--ageval-accent); }\n.ageval-step-label--thought, .ageval-step-label--permission { color: var(--ageval-warning); }\n.ageval-step-label--observation { color: var(--ageval-success); }\n.ageval-step-label--tool_call { color: var(--ageval-text); }\n.ageval-step-kind, .ageval-turn { color: var(--ageval-text-muted); font-family: var(--font-mono, ui-monospace, monospace); font-size: 10px; font-weight: 400; }\n.ageval-step-kind { padding: 0 5px; border: 0.5px solid var(--ageval-border); border-radius: 999px; }\n.ageval-icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--ageval-text-secondary); cursor: pointer; }\n.ageval-ico { display: block; flex-shrink: 0; }\n.ageval-chevron { transition: transform 0.2s ease; }\n.ageval-chevron--open { transform: rotate(180deg); }\n.ageval-step-body { padding: 8px 10px 10px; }\n.ageval-step-body--fold { max-height: 52px; overflow: hidden; cursor: pointer; mask-image: linear-gradient(to bottom, #000 34px, transparent 52px); }\n.ageval-prose { margin: 0; color: var(--ageval-text); font-size: 13px; line-height: 20px; white-space: pre-wrap; word-break: break-word; }\n.ageval-codeblock, .ageval-file pre { margin: 0; overflow: auto; padding: 8px; border-radius: 8px; background: var(--ageval-surface-soft); color: var(--ageval-text); font-family: var(--font-mono, ui-monospace, monospace); font-size: 12px; line-height: 18px; white-space: pre-wrap; word-break: break-word; }\n.ageval-inline-code { padding: 0 3px; border-radius: 4px; background: var(--ageval-surface-soft); font-family: var(--font-mono, ui-monospace, monospace); font-size: 12px; }\n.ageval-strong { font-weight: 600; }\n.ageval-fork { margin: 4px 0 10px; color: var(--ageval-text-muted); font-size: 11px; text-align: center; }\n.ageval-fork::before, .ageval-fork::after { content: \"\"; display: inline-block; width: 18%; margin: 0 8px; border-top: 0.5px solid var(--ageval-border); vertical-align: middle; }\n.ageval-outline-dock { position: absolute; top: 8px; right: 2px; bottom: 8px; z-index: 4; display: flex; justify-content: flex-end; max-width: 72%; pointer-events: none; }\n.ageval-outline { max-height: 100%; overflow: auto; padding: 4px; pointer-events: auto; border-radius: 10px; }\n.ageval-outline--open { min-width: 11.5rem; padding: 6px 8px 6px 6px; background: var(--ageval-surface); box-shadow: 0 8px 24px color-mix(in srgb, var(--ageval-text) 14%, transparent); }\n.ageval-outline-btn { display: flex; align-items: center; justify-content: flex-end; width: 100%; height: 12px; padding: 0 4px; border: 0; background: transparent; cursor: pointer; }\n.ageval-outline--open .ageval-outline-btn { height: 26px; gap: 6px; border-radius: 8px; }\n.ageval-outline--open .ageval-outline-btn:hover, .ageval-outline-btn[aria-current=\"location\"] { background: var(--ageval-surface-soft); }\n.ageval-outline-text { width: 9.5rem; color: var(--ageval-text-secondary); font-size: 12px; text-align: left; }\n.ageval-outline-btn[aria-current=\"location\"] .ageval-outline-text { color: var(--ageval-text); font-weight: 500; }\n.ageval-outline-bar { height: 2px; border-radius: 99px; background: var(--ageval-border-strong); }\n.ageval-outline-btn[aria-current=\"location\"] .ageval-outline-bar { background: var(--ageval-text); }\n.ageval-file { margin: 0 12px 10px; }\n.ageval-file h4 { margin: 10px 0 6px; font-size: 12px; font-weight: 500; }\n.ageval-file pre { max-height: 48vh; }\n.ageval-modal-backdrop { position: absolute; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; padding: 16px; background: color-mix(in srgb, var(--ageval-text) 18%, transparent); }\n.ageval-modal { display: flex; flex-direction: column; width: min(520px, 100%); max-height: 80%; overflow: hidden; border: 0.5px solid var(--ageval-border-strong); border-radius: 12px; background: var(--ageval-surface); }\n.ageval-modal-head, .ageval-modal-foot { display: flex; align-items: center; gap: 8px; padding: 10px 12px; }\n.ageval-modal-head { border-bottom: 0.5px solid var(--ageval-border); }\n.ageval-modal-head h3 { flex: 1; font-size: 14px; }\n.ageval-modal-foot { justify-content: flex-end; border-top: 0.5px solid var(--ageval-border); }\n.ageval-modal-list { min-height: 0; overflow: auto; padding: 4px 12px; }\n.ageval-selected-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 0.5px solid var(--ageval-border); }\n.ageval-selected-row:last-child { border-bottom: 0; }\n@media (prefers-reduced-motion: reduce) {\n  .ageval-chevron, .ageval-outline, .ageval-outline-btn { transition: none; }\n}\n";
+var STYLE_TEXT = "body {\n  --ageval-surface: var(--dsw-alias-bg-layer-1);\n  --ageval-surface-soft: var(--dsw-alias-bg-module-platform);\n  --ageval-overlay: var(--dsw-alias-bg-layer-2);\n  --ageval-hover: var(--dsw-alias-interactive-bg-hover);\n  --ageval-text: var(--dsw-alias-label-primary);\n  --ageval-text-secondary: var(--dsw-alias-label-secondary);\n  --ageval-text-muted: var(--dsw-alias-label-tertiary);\n  --ageval-border: var(--dsw-alias-border-l3);\n  --ageval-border-strong: var(--dsw-alias-border-l1);\n  --ageval-accent: var(--dsw-alias-state-business-primary);\n  --ageval-success: var(--dsw-alias-state-success-primary);\n  --ageval-warning: var(--dsw-alias-state-warn-primary);\n  --ageval-danger: var(--dsw-alias-state-error-primary);\n  --ageval-radius: var(--dsw-radius-sm);\n}\n.ageval-viewer, .ageval-detail { display: flex; flex-direction: column; width: 100%; max-width: 1120px; margin-inline: auto; height: 100%; min-height: 0; min-width: 0; box-sizing: border-box; --ageval-inset: clamp(12px, 2vw, 20px); color: var(--ageval-text); font-family: var(--dsw-font-family); font-size: 13px; line-height: 1.45; }\n.ageval-viewer { position: relative; }\n.ageval-viewer *, .ageval-viewer *::before, .ageval-viewer *::after, .ageval-detail *, .ageval-detail *::before, .ageval-detail *::after { box-sizing: border-box; }\n.ageval-viewer input, .ageval-detail input { font-family: var(--dsw-font-family); }\n.ageval-topbar { display: flex; flex-direction: column; gap: 8px; padding: 12px var(--ageval-inset) 10px; border-bottom: 0.5px solid var(--ageval-border); background: var(--ageval-surface); }\n.ageval-heading { display: flex; align-items: center; gap: 8px; min-width: 0; }\n.ageval-heading h2, .ageval-detail-head h3, .ageval-modal-head h3 { margin: 0; font-weight: 500; }\n.ageval-heading h2 { font-size: 16px; line-height: 1.2; }\n.ageval-meta, .ageval-group-count, .ageval-traj-count { margin-left: auto; color: var(--ageval-text-muted); font-family: var(--dsw-font-family); font-size: 11px; font-weight: 400; }\n.ageval-root-row, .ageval-filter-row, .ageval-composer-actions, .ageval-detail-head, .ageval-kpis, .ageval-chips { display: flex; align-items: center; gap: 6px; min-width: 0; }\n.ageval-topbar > .ageval-root-row { display: grid; grid-template-columns: minmax(0, 1fr) clamp(100px, 24%, 160px); gap: 8px; width: 100%; }\n.ageval-topbar > .ageval-root-row:has(> :only-child) { grid-template-columns: minmax(0, 1fr); }\n.ageval-source-display { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; min-height: 28px; padding: 4px 10px; overflow: hidden; border: .5px solid var(--ageval-border); border-radius: var(--ageval-radius); background: transparent; cursor: pointer; text-align: left; }\n.ageval-source-display > span { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--dsw-font-family); font-size: 11px; }\n.ageval-source-display > svg { display: block; flex: 0 0 14px; width: 14px; height: 14px; min-width: 14px; }\n.ageval-viewer .ageval-recent-select { width: 100%; min-width: 0; max-width: 160px; }\n.ageval-select-control { display: inline-flex; width: 100%; min-width: 0; vertical-align: middle; }\n.ageval-select-trigger { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; min-height: 28px; padding: 4px 10px; border: .5px solid var(--ageval-border); border-radius: var(--ageval-radius); background: var(--ageval-surface); color: var(--ageval-text); font: inherit; font-size: 12px; line-height: 18px; cursor: pointer; text-align: left; }\n.ageval-select-value { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }\n.ageval-select-chevron { flex: 0 0 6px; width: 6px; height: 6px; margin: -3px 2px 0 0; border-right: 1.5px solid var(--ageval-text-muted); border-bottom: 1.5px solid var(--ageval-text-muted); transform: rotate(45deg); }\n.ageval-select-trigger[aria-expanded=\"true\"] .ageval-select-chevron { transform: translateY(3px) rotate(225deg); }\n.ageval-select-trigger:hover:not(:disabled), .ageval-select-trigger[aria-expanded=\"true\"] { border-color: var(--ageval-border-strong); background: var(--ageval-surface-soft); }\n.ageval-select-trigger:focus-visible { outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary)); outline-offset: 2px; }\n.ageval-select-trigger:disabled { cursor: not-allowed; opacity: .5; }\n.ageval-select-menu[popover] { position: fixed; inset: auto; box-sizing: border-box; margin: 0; padding: 5px; border: .5px solid var(--ageval-border-strong); border-radius: var(--dsw-radius-md); background: var(--ageval-overlay); color: var(--ageval-text); font: 12px/1.45 var(--dsw-font-family); overflow: auto; overscroll-behavior: contain; max-width: calc(100vw - 20px); box-shadow: none; }\n.ageval-select-menu::backdrop { background: transparent; }\n.ageval-select-menu *, .ageval-select-menu *::before { box-sizing: border-box; }\n.ageval-select-option { display: flex; align-items: flex-start; gap: 9px; min-height: 32px; padding: 7px 9px; border-radius: var(--dsw-radius-sm); cursor: pointer; }\n.ageval-select-option.is-active { background: var(--ageval-hover); }\n.ageval-select-option[aria-selected=\"true\"] { font-weight: 500; }\n.ageval-select-option-text { min-width: 0; flex: 1; overflow-wrap: anywhere; }\n.ageval-select-check { flex: 0 0 12px; width: 12px; height: 14px; position: relative; }\n.ageval-select-check.is-checked::before { content: ''; position: absolute; top: 2px; left: 3px; width: 5px; height: 9px; border-right: 1.5px solid var(--ageval-accent); border-bottom: 1.5px solid var(--ageval-accent); transform: rotate(45deg); }\n.ageval-attempt-select { flex: 0 0 110px; max-width: 28%; }\n.ageval-attempt-select .ageval-select-trigger { font-family: var(--dsw-font-family); font-size: 11px; }\n\n.ageval-source-display:hover { background: var(--ageval-hover); }\n.ageval-source-display:focus-visible { outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary)); outline-offset: 2px; }\n.ageval-source-dialog { width: min(720px, calc(100vw - 32px)); max-height: min(760px, 90vh); margin: auto; padding: 0; border: .5px solid var(--ageval-border-strong); border-radius: var(--dsw-radius-panel); background: var(--ageval-overlay); color: var(--ageval-text); font: 13px/1.45 var(--dsw-font-family); overflow: auto; }\n.ageval-source-dialog::backdrop { background: var(--dsw-alias-bg-mask-1); }\n.ageval-source-dialog *, .ageval-source-dialog *::before { box-sizing: border-box; }\n.ageval-source-dialog input { font-family: var(--dsw-font-family); }\n.ageval-source-tabs { display: flex; gap: 18px; padding: 0 16px; overflow-x: auto; border-bottom: .5px solid var(--ageval-border); }\n.ageval-github-picker { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }\n.ageval-github-auth { display: flex; align-items: center; justify-content: space-between; gap: 12px; }\n.ageval-github-auth p { margin: 4px 0 0; }\n.ageval-github-identity { display: flex; align-items: center; gap: 10px; min-width: 0; }\n.ageval-github-account { min-width: 0; }\n.ageval-github-avatar { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 32px; width: 32px; height: 32px; overflow: hidden; border: .5px solid var(--ageval-border); border-radius: 50%; corner-shape: round; background: var(--ageval-surface-soft); color: var(--ageval-text-muted); }\n.ageval-github-avatar img { display: block; width: 32px; height: 32px; object-fit: cover; }\n.ageval-cache-dialog { width: min(560px, calc(100vw - 32px)); }\n.ageval-cache-body { color: var(--ageval-text); font-family: var(--dsw-font-family); max-width: 720px; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; }\n.ageval-cache-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 10px; border: .5px solid var(--ageval-border); border-radius: var(--dsw-radius-sm); background: var(--ageval-surface-soft); font-family: var(--dsw-font-family); font-size: 11px; }\n.ageval-cache-summary .ageval-host-name { font-family: var(--dsw-font-family); font-size: 12px; }\n.ageval-cache-note { margin: 0; color: var(--ageval-text-secondary); font-size: 12px; line-height: 1.6; }\n.ageval-cache-policies { display: grid; gap: 7px; margin: 0; }\n.ageval-cache-policies div { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 8px; padding-bottom: 7px; border-bottom: .5px solid var(--ageval-border); font-size: 12px; }\n.ageval-cache-policies div:last-child { border-bottom: 0; padding-bottom: 0; }\n.ageval-cache-policies dt { color: var(--ageval-text); font-weight: 500; }\n.ageval-cache-policies dd { margin: 0; color: var(--ageval-text-secondary); }\n.ageval-cache-confirm { padding: 9px 10px; border: .5px solid var(--ageval-warning); border-radius: var(--dsw-radius-sm); background: var(--ageval-surface-soft); }\n.ageval-cache-confirm p { margin: 0; font-size: 12px; }\n.ageval-cache-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 9px; }\n.ageval-github-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, .65fr); gap: 10px; align-items: end; }\n.ageval-github-form label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; }\n.ageval-github-path { grid-column: 1 / -1; }\n.ageval-github-tree { display: flex; flex-direction: column; gap: 9px; min-width: 0; }\n.ageval-github-login { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; padding: 10px; border: .5px solid var(--ageval-border); border-radius: var(--dsw-radius-sm); }\n.ageval-github-login code { font: 14px var(--dsw-font-family); letter-spacing: .08em; }\n.ageval-github-login a { text-decoration: none; }\n.ageval-github-picker > .ageval-source-caption { margin: 0; }\n@media (max-width: 480px) { .ageval-github-form { grid-template-columns: minmax(0, 1fr); } .ageval-github-auth { align-items: flex-start; flex-direction: column; } }\n.ageval-source-tabs .ageval-tab { padding: 10px 0; white-space: nowrap; }\n.ageval-source-tabs .ageval-tab:disabled { opacity: .5; cursor: wait; }\n.ageval-saved-paths { padding: 12px 16px; min-height: 220px; }\n.ageval-saved-paths > .ageval-source-caption { margin: 0 0 10px; }\n.ageval-saved-path-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: .5px solid var(--ageval-border); }\n.ageval-saved-path-row:last-child { border-bottom: 0; }\n.ageval-saved-path-open { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; padding: 6px 4px; border: 0; border-radius: var(--dsw-radius-sm); background: transparent; text-align: left; cursor: pointer; }\n.ageval-saved-path-open:hover { background: var(--ageval-hover); }\n.ageval-saved-path-info { display: flex; flex-direction: column; gap: 3px; min-width: 0; }\n.ageval-saved-path-name { font-weight: 500; }\n.ageval-saved-path-location { font: 11px/1.5 var(--dsw-font-family); color: var(--ageval-text-secondary); overflow-wrap: anywhere; }\n.ageval-source-dialog .ageval-saved-path-remove { flex: 0 0 auto; padding: 6px 8px; border: .5px solid var(--ageval-border); border-radius: var(--dsw-radius-sm); background: transparent; color: var(--ageval-danger); cursor: pointer; font-size: 12px; }\n.ageval-saved-path-remove:hover:not(:disabled) { border-color: var(--ageval-danger); }\n.ageval-saved-path-open:disabled, .ageval-saved-path-remove:disabled { opacity: .5; cursor: wait; }\n.ageval-saved-path-open:focus-visible, .ageval-saved-path-remove:focus-visible { outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary)); outline-offset: 2px; }\n.ageval-source-caption { color: var(--ageval-text-muted); font-size: 11px; }\n.ageval-saved-source { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: .5px solid var(--ageval-border); border-radius: var(--dsw-radius-sm); padding: 4px 7px; background: transparent; cursor: pointer; }\n.ageval-source-local { display: flex; flex-direction: column; gap: 9px; padding: 12px; }\n.ageval-source-ssh { display: grid; grid-template-columns: minmax(130px, 36%) minmax(0, 1fr); min-height: 260px; border-top: .5px solid var(--ageval-border); }\n.ageval-host-list { max-height: 400px; overflow: auto; border-right: .5px solid var(--ageval-border); }\n.ageval-host-row { display: flex; flex-direction: column; gap: 2px; width: 100%; border: 0; border-bottom: .5px solid var(--ageval-border); padding: 9px 10px; text-align: left; background: transparent; cursor: pointer; }\n.ageval-host-row:hover, .ageval-tree-row:hover { background: var(--ageval-hover); }\n.ageval-host-row.is-selected { background: var(--dsw-alias-interactive-bg-active); }\n.ageval-host-name { font-weight: 500; }\n.ageval-host-meta { font: 11px var(--dsw-font-family); color: var(--ageval-text-muted); overflow-wrap: anywhere; }\n.ageval-tree { min-width: 0; padding: 10px; display: flex; flex-direction: column; gap: 8px; }\n.ageval-tree-location { display: flex; align-items: center; gap: 5px; }\n.ageval-tree-location input { min-width: 0; flex: 1; }\n.ageval-tree-entries { overflow: auto; max-height: 300px; }\n.ageval-tree-row { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; padding: 7px 5px; background: transparent; border: 0; border-bottom: .5px solid var(--ageval-border); cursor: pointer; overflow-wrap: anywhere; }\n.ageval-source-dialog .ageval-modal-foot > .ageval-host-button:last-child { margin-left: auto; }\n.ageval-root-path { min-width: 0; flex: 1; overflow: hidden; color: var(--ageval-text-secondary); font-family: var(--dsw-font-family); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }\n.ageval-control, .ageval-select { box-sizing: border-box; min-height: 32px; height: 32px; border: var(--dsh-hairline-width, .5px) solid var(--ageval-border); border-radius: var(--dsw-radius-sm); background: var(--dsw-alias-bg-layer-2); color: var(--ageval-text); font: 12px/18px var(--dsw-font-family); }\n.ageval-control, .ageval-select { width: 100%; padding: 0 10px; }\n.ageval-control::placeholder, .ageval-settings-input::placeholder { color: var(--dsw-alias-label-dimmed); }\n.ageval-host-button { flex-shrink: 0; white-space: nowrap; font-family: var(--dsw-font-family); }\n.ageval-source-dialog .ageval-host-button { font-size: 12px; line-height: 18px; }\n.ageval-cache-body .ageval-host-button { height: 36px; padding-inline: 14px; border-radius: var(--dsw-radius-md); font-size: 14px; line-height: 22px; }\n.ageval-control:focus, .ageval-select:focus, .ageval-suite:focus-visible, .ageval-task:focus-visible, .ageval-icon-btn:focus-visible, .ageval-tab:focus-visible, .ageval-outline-btn:focus-visible { border-color: var(--ageval-border-strong); outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary)); outline-offset: 1px; }\n.ageval-button { box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; gap: 4px; height: 28px; padding: 0 10px; border: var(--dsh-hairline-width, .5px) solid var(--ageval-border); border-radius: var(--dsw-radius-sm); color: var(--ageval-text); background: transparent; cursor: pointer; white-space: nowrap; font: 12px/18px var(--dsw-font-family); text-decoration: none; }\n.ageval-button:hover:not(:disabled), .ageval-icon-btn:hover:not(:disabled) { background: var(--ageval-hover); }\n.ageval-button:disabled { cursor: not-allowed; opacity: .4; }\n.ageval-filter-search { width: 100%; }\n.ageval-search-input { width: 100%; box-sizing: border-box; min-height: 32px; height: 32px; border: var(--dsh-hairline-width, .5px) solid var(--ageval-border); border-radius: var(--dsw-radius-sm); background: var(--dsw-alias-bg-layer-2); }\n.ageval-search-input input { font-family: var(--dsw-font-family); font-size: 12px; line-height: 18px; }\n.ageval-check--compact > span { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }\n.ageval-filter-row { overflow-x: auto; padding-bottom: 1px; }\n.ageval-filter-select { flex: 0 0 auto; width: 128px; }\n.ageval-summary { display: flex; align-items: center; gap: 10px; min-height: 22px; padding: 0 var(--ageval-inset); color: var(--ageval-text-secondary); font-family: var(--dsw-font-family); font-size: 11px; font-variant-numeric: tabular-nums; }\n.ageval-summary strong { color: var(--ageval-text); font-weight: 500; }\n.ageval-scroll, .ageval-detail-scroll { min-height: 0; flex: 1; overflow: auto; }\n.ageval-scroll { padding: 0 var(--ageval-inset) 10px; }\n.ageval-detail-scroll { padding: 6px var(--ageval-inset) 12px; scrollbar-gutter: stable; }\n.ageval-group { margin-top: 8px; }\n.ageval-group-title { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 8px; min-height: 28px; border-bottom: 0.5px solid var(--ageval-border); background: var(--ageval-surface); font-size: 12px; font-weight: 500; }\n.ageval-suite, .ageval-task { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; padding: 9px 8px; border: 0; border-bottom: 0.5px solid var(--ageval-border); background: transparent; text-align: left; cursor: pointer; }\n.ageval-suite:hover, .ageval-task:hover, .ageval-suite--selected { background: var(--ageval-hover); }\n.ageval-suite-main, .ageval-task-main, .ageval-step-main { min-width: 0; flex: 1; }\n.ageval-step-main { display: flex; align-items: center; gap: 6px; }\n.ageval-suite-name, .ageval-task-id, .ageval-step-label, .ageval-outline-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }\n.ageval-suite-name { font-weight: 500; }\n.ageval-subline, .ageval-detail-sub, .ageval-metrics { color: var(--ageval-text-secondary); font-family: var(--dsw-font-family); font-size: 11px; }\n.ageval-subline { overflow: hidden; margin-top: 1px; text-overflow: ellipsis; white-space: nowrap; }\n.ageval-suite-side, .ageval-step-side { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }\n.ageval-metrics { font-variant-numeric: tabular-nums; white-space: nowrap; }\n.ageval-ring { display: inline-flex; align-items: center; gap: 4px; color: var(--ageval-accent); font-family: var(--dsw-font-family); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }\n.ageval-ring-svg { display: block; transform: rotate(-90deg); }\n.ageval-ring-track { stroke: var(--ageval-border); }\n.ageval-ring-fill { stroke: var(--ageval-accent); }\n.ageval-ring-label { color: var(--ageval-text); }\n.ageval-check { flex: 0 0 auto; margin: 0; }\n.ageval-composer { display: flex; flex-direction: column; gap: 6px; padding: 10px var(--ageval-inset); border-top: 0.5px solid var(--ageval-border); background: var(--ageval-surface); }\n.ageval-composer-actions { justify-content: flex-end; }\n.ageval-composer-actions .ageval-host-button:first-child { margin-right: auto; }\n.ageval-banner { margin: 0 12px 8px; font-size: 12px; }\n.ageval-banner--error { color: var(--ageval-danger); }\n.ageval-banner--ok { color: var(--ageval-success); }\n.ageval-empty, .ageval-step-empty { padding: 28px 12px; color: var(--ageval-text-muted); text-align: center; }\n.ageval-step-empty { padding: 8px 12px; text-align: left; font-size: 12px; }\n.ageval-detail-head { padding: 10px var(--ageval-inset); border-bottom: 0.5px solid var(--ageval-border); }\n.ageval-detail-head h3 { flex: 1; overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }\n.ageval-detail-title { min-width: 0; flex: 1; }\n.ageval-back { width: 28px; padding: 4px 0; }\n.ageval-kpis { padding: 8px var(--ageval-inset) 0; color: var(--ageval-text-secondary); font-family: var(--dsw-font-family); font-size: 11px; }\n.ageval-chips { flex-wrap: wrap; overflow-x: auto; padding: 8px var(--ageval-inset) 0; }\n.ageval-task-tools { display: flex; flex-direction: column; gap: 6px; padding: 8px var(--ageval-inset) 0; }\n.ageval-verdict { flex: 0 0 auto; width: 46px; font-family: var(--dsw-font-family); font-size: 11px; font-weight: 500; letter-spacing: 0.02em; text-transform: uppercase; }\n.ageval-verdict--pass { color: var(--ageval-success); }\n.ageval-verdict--fail { color: var(--ageval-danger); }\n.ageval-verdict--error { color: var(--ageval-warning); }\n.ageval-verdict--other { color: var(--ageval-text-muted); }\n.ageval-error-text { color: var(--ageval-danger); }\n.ageval-tabs { display: flex; gap: 14px; padding: 0 12px; border-bottom: 0.5px solid var(--ageval-border); }\n.ageval-tab { margin-bottom: -0.5px; padding: 7px 0; border: 0; border-bottom: 1px solid transparent; background: transparent; color: var(--ageval-text-muted); cursor: pointer; }\n.ageval-tab--on { border-bottom-color: var(--ageval-text); color: var(--ageval-text); font-weight: 500; }\n.ageval-traj-note { margin: 0; padding: 6px 12px 0; color: var(--ageval-text-muted); font-size: 11px; }\n.ageval-traj-bar { display: flex; align-items: center; gap: 6px; padding: 6px 12px; }\n.ageval-traj-filter { width: auto; min-width: 92px; min-height: 28px; }\n.ageval-traj-wrap { display: flex; flex-direction: column; min-height: 0; flex: 1; }\n.ageval-traj-host { display: flex; flex-direction: column; min-height: 0; flex: 1; }\n.ageval-traj-stage { position: relative; display: flex; min-height: 0; flex: 1; }\n.ageval-trace-port { min-height: 0; flex: 1; overflow: auto; padding: 0 28px 12px 12px; }\n.ageval-invoke { position: sticky; top: 0; z-index: 3; display: flex; align-items: baseline; gap: 8px; padding: 6px 0 4px; background: var(--ageval-surface); font-size: 12px; font-weight: 500; }\n.ageval-step { margin-bottom: 8px; border: 0.5px solid var(--ageval-border); border-radius: var(--ageval-radius); background: var(--ageval-surface); }\n.ageval-step--observation { background: color-mix(in srgb, var(--ageval-surface-soft) 65%, var(--ageval-surface)); }\n.ageval-step-head { position: sticky; top: var(--traj-invoke-h, 0px); z-index: 2; display: flex; align-items: center; gap: 6px; min-height: 32px; padding: 6px 8px; border-bottom: 0.5px solid var(--ageval-border); background: var(--ageval-surface); }\n.ageval-step--observation .ageval-step-head { background: color-mix(in srgb, var(--ageval-surface-soft) 65%, var(--ageval-surface)); }\n.ageval-step-label { display: flex; align-items: center; gap: 5px; min-width: 0; flex: 1 1 auto; font-size: 12px; font-weight: 500; }\n.ageval-step-label > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }\n.ageval-step-label--user { color: var(--ageval-accent); }\n.ageval-step-label--thought, .ageval-step-label--permission { color: var(--ageval-warning); }\n.ageval-step-label--observation { color: var(--ageval-success); }\n.ageval-step-label--tool_call { color: var(--ageval-text); }\n.ageval-step-kind, .ageval-turn { color: var(--ageval-text-muted); font-family: var(--dsw-font-family); font-size: 11px; font-weight: 400; }\n.ageval-step-kind { padding: 0 5px; border: 0.5px solid var(--ageval-border); border-radius: 999px; corner-shape: round; }\n.ageval-icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--dsw-radius-sm); background: transparent; color: var(--ageval-text-secondary); cursor: pointer; }\n.ageval-ico { display: block; flex-shrink: 0; }\n.ageval-chevron { transition: transform 0.2s ease; }\n.ageval-chevron--open { transform: rotate(180deg); }\n.ageval-step-body { padding: 8px 10px 10px; }\n.ageval-step-body--fold { max-height: 52px; overflow: hidden; cursor: pointer; mask-image: linear-gradient(to bottom, #000 34px, transparent 52px); }\n.ageval-prose { margin: 0; color: var(--ageval-text); font-size: 13px; line-height: 20px; white-space: pre-wrap; word-break: break-word; }\n.ageval-codeblock, .ageval-file pre { margin: 0; overflow: auto; padding: 8px; border-radius: var(--dsw-radius-sm); background: var(--ageval-surface-soft); color: var(--ageval-text); font-family: var(--ds-font-family-code); font-size: 12px; line-height: 18px; white-space: pre-wrap; word-break: break-word; }\n.ageval-inline-code { padding: 0 3px; border-radius: var(--dsw-radius-xs); background: var(--ageval-surface-soft); font-family: var(--ds-font-family-code); font-size: 12px; }\n.ageval-strong { font-weight: 500; }\n.ageval-fork { margin: 4px 0 10px; color: var(--ageval-text-muted); font-size: 11px; text-align: center; }\n.ageval-fork::before, .ageval-fork::after { content: \"\"; display: inline-block; width: 18%; margin: 0 8px; border-top: 0.5px solid var(--ageval-border); vertical-align: middle; }\n.ageval-outline-dock { position: absolute; top: 8px; right: 2px; bottom: 8px; z-index: 4; display: flex; justify-content: flex-end; max-width: 72%; pointer-events: none; }\n.ageval-outline { max-height: 100%; overflow: auto; padding: 4px; pointer-events: auto; border-radius: var(--dsw-radius-md); }\n.ageval-outline--open { min-width: 11.5rem; padding: 6px 8px 6px 6px; background: var(--ageval-overlay); border: .5px solid var(--ageval-border); box-shadow: none; }\n.ageval-outline-btn { display: flex; align-items: center; justify-content: flex-end; width: 100%; height: 12px; padding: 0 4px; border: 0; background: transparent; cursor: pointer; }\n.ageval-outline--open .ageval-outline-btn { height: 26px; gap: 6px; border-radius: var(--dsw-radius-sm); }\n.ageval-outline--open .ageval-outline-btn:hover, .ageval-outline-btn[aria-current=\"location\"] { background: var(--ageval-surface-soft); }\n.ageval-outline-text { width: 9.5rem; color: var(--ageval-text-secondary); font-size: 12px; text-align: left; }\n.ageval-outline-btn[aria-current=\"location\"] .ageval-outline-text { color: var(--ageval-text); font-weight: 500; }\n.ageval-outline-bar { height: 2px; border-radius: 99px; corner-shape: round; background: var(--ageval-border-strong); }\n.ageval-outline-btn[aria-current=\"location\"] .ageval-outline-bar { background: var(--ageval-text); }\n.ageval-file { margin: 0 12px 10px; }\n.ageval-file h4 { margin: 10px 0 6px; font-size: 12px; font-weight: 500; }\n.ageval-file pre { max-height: 48vh; }\n.ageval-modal-backdrop { position: absolute; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; padding: 16px; background: var(--dsw-alias-bg-mask-1); }\n.ageval-modal { display: flex; flex-direction: column; width: min(520px, 100%); max-height: 80%; overflow: hidden; border: 0.5px solid var(--ageval-border-strong); border-radius: var(--dsw-radius-panel); background: var(--ageval-overlay); }\n.ageval-modal-head, .ageval-modal-foot { display: flex; align-items: center; gap: 8px; padding: 16px 20px; }\n.ageval-modal-head { border-bottom: 0.5px solid var(--ageval-border); }\n.ageval-modal-head h3 { flex: 1; font-size: 14px; }\n.ageval-modal-foot { justify-content: flex-end; border-top: 0.5px solid var(--ageval-border); }\n.ageval-modal-list { min-height: 0; overflow: auto; padding: 4px 12px; }\n.ageval-selected-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 0.5px solid var(--ageval-border); }\n.ageval-selected-row:last-child { border-bottom: 0; }\n.ageval-tracking { display: flex; flex-direction: column; min-height: 0; flex: 1; }\n.ageval-tracking-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px var(--ageval-inset); }\n.ageval-tracking-toolbar > span { flex: 1; min-width: 120px; }\n.ageval-tracking-scroll { min-height: 0; flex: 1; overflow: auto; padding: 0 var(--ageval-inset) 12px; }\n.ageval-tracked-run { padding: 10px 0 12px; border-bottom: .5px solid var(--ageval-border); }\n.ageval-tracked-open { display: flex; gap: 12px; align-items: center; width: 100%; min-width: 0; border: 0; border-radius: var(--dsw-radius-sm); padding: 6px 8px; background: transparent; text-align: left; cursor: pointer; }\n.ageval-tracked-open:hover { background: var(--ageval-surface-soft); }\n.ageval-tracked-open:focus-visible { outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary)); outline-offset: 1px; }\n.ageval-tracked-progress, .ageval-tracking-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 5px 8px 0; font: 11px/1.5 var(--dsw-font-family); }\n.ageval-tracking-actions { gap: 6px; padding-top: 8px; font-family: var(--dsw-font-family); }\n.ageval-tracking-actions .ageval-host-button:last-child { margin-left: auto; }\n.ageval-tracking-delta, .ageval-tracking-meta, .ageval-tracking-error { margin: 5px 8px 0; font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }\n.ageval-tracking-delta { color: var(--ageval-text); font-family: var(--dsw-font-family); }\n.ageval-tracking-meta { color: var(--ageval-text-muted); }\n.ageval-tracking-error { color: var(--ageval-danger); }\n.ageval-stage-history { margin: 10px 8px 0; padding: 10px; border: .5px solid var(--ageval-border); border-radius: var(--dsw-radius-sm); }\n.ageval-stage-form { display: flex; gap: 8px; margin-bottom: 8px; }\n.ageval-stage-form .ageval-control { min-width: 0; }\n.ageval-stage-row { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 5px 12px; padding: 8px 0; border-bottom: .5px solid var(--ageval-border); font-size: 12px; }\n.ageval-stage-row:last-child { border: 0; }\n.ageval-stage-row > .ageval-source-caption { flex-basis: 100%; }\n.ageval-tracking-note { padding: 8px var(--ageval-inset); margin: 0; border-top: .5px solid var(--ageval-border); color: var(--ageval-text-muted); font-size: 11px; line-height: 1.5; }\n.ageval-heading { flex-wrap: wrap; }\n.ageval-composer-actions { flex-wrap: wrap; }\n.ageval-cache-summary, .ageval-cache-confirm, .ageval-github-login, .ageval-stage-history { border-radius: var(--dsw-radius-lg); }\n.ageval-cache-summary { background: var(--dsw-alias-settings-card-fill); border-color: var(--dsw-alias-settings-card-stroke); }\n.ageval-tracked-open:hover { background: var(--ageval-hover); }\n.ageval-button:focus-visible, .ageval-saved-path-remove:focus-visible { outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary)); outline-offset: 2px; }\n@media (prefers-reduced-motion: reduce) {\n  .ageval-chevron, .ageval-outline, .ageval-outline-btn { transition: none; }\n}\n\n/* Settings page (DSH settings sidebar) */\n.ageval-settings-group { display: flex; flex-direction: column; gap: 12px; padding: 16px 0; border-bottom: .5px solid var(--dsw-alias-border-l2); }\n.ageval-settings-group:last-child { border-bottom: 0; }\n.ageval-settings-title { margin: 0; color: var(--ageval-text); font-size: 16px; line-height: 24px; font-weight: 500; }\n.ageval-settings-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }\n.ageval-settings-input {\n  flex: 1 1 260px; min-width: 160px; height: 36px; box-sizing: border-box; padding: 0 12px;\n  font-family: var(--dsw-font-family); font-size: 12px;\n  color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-layer-2);\n  border: .5px solid var(--dsw-alias-border-l3); border-radius: var(--dsw-radius-md);\n}\n.ageval-settings-input:focus { border-color: var(--ageval-border-strong); outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary)); outline-offset: 1px; }\n.ageval-verdict-segments { width: min(100%, 420px); flex-shrink: 0; font-family: var(--dsw-font-family); }\n.ageval-verdict-segments button { white-space: nowrap; font-family: var(--dsw-font-family); }\n.ageval-task-time { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 3px; color: var(--ageval-text-secondary); font: 11px/18px var(--dsw-font-family); }\n.ageval-summary { gap: 10px; flex-wrap: wrap; padding-block: 5px; }\n.ageval-sort-select { width: 180px; margin-left: auto; }\n.ageval-source-display, .ageval-chip, .ageval-tab, .ageval-task, .ageval-suite { color: var(--ageval-text); font-family: var(--dsw-font-family); }\n";
 var PREVIEW_LINES = 2.5;
 var TICK = String.fromCharCode(96);
 var FENCE = TICK + TICK + TICK;
@@ -574,7 +606,7 @@ function proseNodes(text) {
   return blocks;
 }
 function Button({ children, onClick, disabled, accent = false, quiet = false, className = "", label }) {
-  return (0, import_react2.createElement)("button", { type: "button", className: "ageval-button" + (accent ? " ageval-button--accent" : "") + (quiet ? " ageval-button--quiet" : "") + (className ? " " + className : ""), onClick, disabled, "aria-label": label }, children);
+  return (0, import_react2.createElement)(import_dsh_client_ui_primitives.Button, { size: "sm", variant: accent ? "primary" : quiet ? "ghost" : "outline", className: "ageval-host-button" + (className ? " " + className : ""), onClick, disabled, "aria-label": label }, children);
 }
 function ScoreRing({ value }) {
   if (value == null || !Number.isFinite(value)) return (0, import_react2.createElement)("span", { className: "ageval-ring" }, "-");
@@ -898,7 +930,42 @@ function AttemptView({ attempt, onBack }) {
     ) : (0, import_react2.createElement)("div", { className: "ageval-empty" }, dict.noSteps)
   );
 }
-function DetailView({ data, selected, error, busy, onBack, onToggle, onAttempt }) {
+function TaskTime({ task, runId, onRead }) {
+  const [loaded, setLoaded] = (0, import_react2.useState)(null), [busy, setBusy] = (0, import_react2.useState)(false), [error, setError] = (0, import_react2.useState)("");
+  (0, import_react2.useEffect)(() => {
+    setLoaded(null);
+    setError("");
+  }, [runId]);
+  const request = (0, import_react2.useRef)(0);
+  (0, import_react2.useEffect)(() => {
+    request.current++;
+    return () => {
+      request.current++;
+    };
+  }, [runId]);
+  const timing = loaded || (runId === task.runId ? task : {});
+  const known = timing.startedAt || timing.finishedAt || timing.durationMs != null;
+  return (0, import_react2.createElement)(
+    "div",
+    { className: "ageval-task-time" },
+    known ? (0, import_react2.createElement)("span", { title: [timing.startedAt, timing.finishedAt].filter(Boolean).join(" \u2192 ") }, [timing.startedAt ? "\u5F00\u59CB " + formatTimestamp(timing.startedAt) : timing.finishedAt ? "\u5B8C\u6210 " + formatTimestamp(timing.finishedAt) : null, timing.durationMs != null ? formatDuration(timing.durationMs) : null].filter(Boolean).join(" \xB7 ")) : (0, import_react2.createElement)("span", null, "\u65F6\u95F4\u672A\u8BB0\u5F55"),
+    !known && !loaded && runId && onRead ? (0, import_react2.createElement)(import_dsh_client_ui_primitives.Button, { size: "sm", variant: "ghost", disabled: busy, onClick: (event) => {
+      event.stopPropagation();
+      const own = ++request.current;
+      setBusy(true);
+      setError("");
+      void onRead(task, runId).then((value) => {
+        if (request.current === own) setLoaded(value);
+      }).catch((cause) => {
+        if (request.current === own) setError(cause.message);
+      }).finally(() => {
+        if (request.current === own) setBusy(false);
+      });
+    } }, busy ? "\u8BFB\u53D6\u4E2D\u2026" : "\u8BFB\u53D6\u65F6\u95F4") : null,
+    error ? (0, import_react2.createElement)("span", { className: "ageval-error-text", role: "status" }, error) : null
+  );
+}
+function DetailView({ data, selected, error, busy, onBack, onToggle, onAttempt, onTiming }) {
   const [query, setQuery] = (0, import_react2.useState)("");
   const [verdict, setVerdict] = (0, import_react2.useState)("all");
   const [bucket, setBucket] = (0, import_react2.useState)("");
@@ -925,9 +992,10 @@ function DetailView({ data, selected, error, busy, onBack, onToggle, onAttempt }
       (0, import_react2.createElement)(ScoreRing, { value: row.passRate })
     ),
     (0, import_react2.createElement)(Banner, { error }),
-    (0, import_react2.createElement)("div", { className: "ageval-kpis" }, (0, import_react2.createElement)("label", { className: "ageval-root-row" }, (0, import_react2.createElement)("input", { className: "ageval-check", type: "checkbox", checked: selected, onChange: onToggle }), (0, import_react2.createElement)("span", null, selected ? "\u5DF2\u52A0\u5165\u5206\u6790" : dict.addContext)), (0, import_react2.createElement)(Metrics, { row }), (0, import_react2.createElement)("span", { className: "ageval-meta" }, row.status)),
-    Object.keys(data.errors).length ? (0, import_react2.createElement)("div", { className: "ageval-chips" }, Object.entries(data.errors).map(([name, count]) => (0, import_react2.createElement)("button", { key: name, type: "button", className: "ageval-chip" + (bucket === name ? " ageval-chip--on" : ""), onClick: () => setBucket((current) => current === name ? "" : name) }, name + " " + count))) : null,
-    (0, import_react2.createElement)("div", { className: "ageval-chips" }, [["all", "\u5168\u90E8 " + data.tasks.length], ["pass", "PASS " + counts.pass], ["fail", "FAIL " + counts.fail], ["error", "ERROR " + counts.error]].map(([id, label]) => (0, import_react2.createElement)("button", { key: id, type: "button", className: "ageval-chip" + (verdict === id ? " ageval-chip--on" : ""), onClick: () => setVerdict(id) }, label))),
+    (0, import_react2.createElement)("div", { className: "ageval-kpis" }, onToggle ? (0, import_react2.createElement)(import_dsh_client_ui_primitives.Checkbox, { className: "ageval-check", checked: selected, onChange: onToggle, label: selected ? "\u5DF2\u52A0\u5165\u5206\u6790" : dict.addContext }) : null, (0, import_react2.createElement)(Metrics, { row }), (0, import_react2.createElement)("span", { className: "ageval-meta" }, row.status)),
+    Object.keys(data.errors).length ? (0, import_react2.createElement)("div", { className: "ageval-chips" }, Object.entries(data.errors).map(([name, count]) => (0, import_react2.createElement)(import_dsh_client_ui_primitives.Button, { key: name, size: "sm", variant: bucket === name ? "toolbar" : "ghost", "aria-pressed": bucket === name, onClick: () => setBucket((current) => current === name ? "" : name) }, name + " " + count))) : null,
+    (0, import_react2.createElement)("div", { className: "ageval-chips" }, (0, import_react2.createElement)(import_dsh_client_ui_primitives.SegmentedControl, { id: "ageval-task-verdict", value: verdict, onChange: setVerdict, label: "Task \u7ED3\u679C\u5206\u7EC4", className: "ageval-verdict-segments", options: [["all", "\u5168\u90E8 " + data.tasks.length], ["pass", "PASS " + counts.pass], ["fail", "FAIL " + counts.fail], ["error", "ERROR " + counts.error]].map(([value, label]) => ({ value, label })) })),
+    (0, import_react2.createElement)("p", { className: "ageval-traj-note" }, "Suite \u521B\u5EFA\u65F6\u95F4\uFF1A" + formatTimestamp(row.createdAt)),
     (0, import_react2.createElement)("div", { className: "ageval-task-tools" }, (0, import_react2.createElement)("input", { className: "ageval-control", value: query, placeholder: "\u641C\u7D22 task", onChange: (event) => setQuery(event.target.value) })),
     (0, import_react2.createElement)("div", { className: "ageval-detail-scroll" }, tasks.length ? tasks.map((task) => {
       const runId = runs[task.taskId] || task.runId || "";
@@ -949,7 +1017,7 @@ function DetailView({ data, selected, error, busy, onBack, onToggle, onAttempt }
           }
         },
         (0, import_react2.createElement)("span", { className: "ageval-verdict ageval-verdict--" + verdictOf(task.status) }, verdictOf(task.status) === "other" ? task.status || "-" : verdictOf(task.status)),
-        (0, import_react2.createElement)("div", { className: "ageval-task-main" }, (0, import_react2.createElement)("div", { className: "ageval-task-id" }, task.taskId), task.errorTitle ? (0, import_react2.createElement)("div", { className: "ageval-subline ageval-error-text" }, task.errorTitle) : null),
+        (0, import_react2.createElement)("div", { className: "ageval-task-main" }, (0, import_react2.createElement)("div", { className: "ageval-task-id" }, task.taskId), (0, import_react2.createElement)(TaskTime, { key: runId, task, runId, onRead: onTiming }), task.errorTitle ? (0, import_react2.createElement)("div", { className: "ageval-subline ageval-error-text" }, task.errorTitle) : null),
         task.score == null ? null : (0, import_react2.createElement)("span", { className: "ageval-metrics", title: String(task.score) }, formatScore(task.score)),
         ids.length > 1 ? (0, import_react2.createElement)(CustomSelect, { className: "ageval-attempt-select", value: runId, aria: "Attempt", onChange: (value) => setRuns((prev) => ({ ...prev, [task.taskId]: value })), options: ids.map((id) => [id, id]) }) : null
       );
@@ -967,7 +1035,7 @@ function SuiteList({ rows, selected, onToggle, onOpen }) {
         role: "button",
         tabIndex: 0,
         onClick: (event) => {
-          if (event.target.closest("input,button")) return;
+          if (event.target.closest("input,button,label")) return;
           onOpen(row);
         },
         onKeyDown: (event) => {
@@ -975,8 +1043,8 @@ function SuiteList({ rows, selected, onToggle, onOpen }) {
           if (event.key === "Enter") onOpen(row);
         }
       },
-      (0, import_react2.createElement)("input", { className: "ageval-check", type: "checkbox", checked: Boolean(selected[key]), onChange: () => onToggle(row), "aria-label": dict.selected + " " + key }),
-      (0, import_react2.createElement)("div", { className: "ageval-suite-main" }, (0, import_react2.createElement)("div", { className: "ageval-suite-name" }, row.suite), (0, import_react2.createElement)("div", { className: "ageval-subline" }, [row.model || "model unknown", row.harness].filter(Boolean).join("  "))),
+      (0, import_react2.createElement)(import_dsh_client_ui_primitives.Checkbox, { className: "ageval-check ageval-check--compact", checked: Boolean(selected[key]), onChange: () => onToggle(row), label: dict.selected + " " + key }),
+      (0, import_react2.createElement)("div", { className: "ageval-suite-main" }, (0, import_react2.createElement)("div", { className: "ageval-suite-name" }, row.suite), (0, import_react2.createElement)("div", { className: "ageval-subline" }, [row.model || "model unknown", row.harness, "\u521B\u5EFA " + formatTimestamp(row.createdAt)].filter(Boolean).join(" \xB7 "))),
       (0, import_react2.createElement)("div", { className: "ageval-suite-side" }, (0, import_react2.createElement)(ScoreRing, { value: row.passRate }), (0, import_react2.createElement)(Metrics, { row }))
     );
   }));
@@ -1284,28 +1352,38 @@ function SourcePicker({ source, recent, onChoose, onRemove, onClose }) {
 function formatBytes(bytes) {
   return bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
-function CacheSettings({ onClose }) {
-  const dialog = (0, import_react2.useRef)(null);
+function SettingsPage() {
   const [info, setInfo] = (0, import_react2.useState)(null);
   const [busy, setBusy] = (0, import_react2.useState)(true);
   const [confirm, setConfirm] = (0, import_react2.useState)(false);
   const [error, setError] = (0, import_react2.useState)("");
   const [message, setMessage] = (0, import_react2.useState)("");
+  const [storage, setStorage] = (0, import_react2.useState)(null);
+  const [draft, setDraft] = (0, import_react2.useState)("");
+  const [saving, setSaving] = (0, import_react2.useState)(false);
   const alive = (0, import_react2.useRef)(true);
+  const loadStorage = async () => {
+    const value = await readJson(API + "/settings");
+    if (!alive.current) return;
+    setStorage(value);
+    setDraft(value.dataDir);
+  };
   (0, import_react2.useEffect)(() => {
     alive.current = true;
-    const element = dialog.current;
-    element?.showModal();
-    void readJson(API + "/cache").then((value) => {
-      if (alive.current) setInfo(value);
-    }).catch((cause) => {
-      if (alive.current) setError(cause.message);
-    }).finally(() => {
+    void Promise.all([
+      readJson(API + "/cache").then((value) => {
+        if (alive.current) setInfo(value);
+      }).catch((cause) => {
+        if (alive.current) setError(cause.message);
+      }),
+      loadStorage().catch((cause) => {
+        if (alive.current) setError(cause.message);
+      })
+    ]).finally(() => {
       if (alive.current) setBusy(false);
     });
     return () => {
       alive.current = false;
-      element?.close();
     };
   }, []);
   const action = async (clear) => {
@@ -1325,13 +1403,58 @@ function CacheSettings({ onClose }) {
       if (alive.current) setBusy(false);
     }
   };
+  const saveDir = async () => {
+    setSaving(true);
+    setError("");
+    setMessage("");
+    try {
+      await readJson(API + "/settings", { method: "PUT", body: JSON.stringify({ dataDir: draft }) });
+      if (alive.current) {
+        await loadStorage();
+        setMessage("\u5DF2\u4FDD\u5B58\u3002\u91CD\u542F Host \u540E\u751F\u6548\uFF0C\u73B0\u6709\u6570\u636E\u5DF2\u968F\u8BBE\u7F6E\u8FC1\u79FB\u3002");
+      }
+    } catch (cause) {
+      if (alive.current) setError(cause.message);
+    } finally {
+      if (alive.current) setSaving(false);
+    }
+  };
+  const openDir = async () => {
+    setError("");
+    try {
+      await readJson(API + "/settings/open", { method: "POST", body: JSON.stringify({ dataDir: draft }) });
+    } catch (cause) {
+      if (alive.current) setError(cause.message);
+    }
+  };
   return (0, import_react2.createElement)(
-    "dialog",
-    { ref: dialog, className: "ageval-source-dialog ageval-cache-dialog", "aria-labelledby": "ageval-settings-title", onCancel: onClose },
-    (0, import_react2.createElement)("div", { className: "ageval-modal-head" }, (0, import_react2.createElement)("h3", { id: "ageval-settings-title" }, "\u8BBE\u7F6E \xB7 \u7F13\u5B58\u7BA1\u7406"), (0, import_react2.createElement)(Button, { quiet: true, onClick: onClose, label: "\u5173\u95ED\u8BBE\u7F6E" }, "\xD7")),
+    "div",
+    { className: "ageval-cache-body" },
     (0, import_react2.createElement)(
-      "div",
-      { className: "ageval-cache-body" },
+      "section",
+      { className: "ageval-settings-group" },
+      (0, import_react2.createElement)("h3", { className: "ageval-settings-title" }, "\u6570\u636E\u76EE\u5F55"),
+      (0, import_react2.createElement)("p", { className: "ageval-cache-note" }, "\u8FFD\u8E2A\u767B\u8BB0\u3001\u9636\u6BB5\u5386\u53F2\u548C\u6765\u6E90\u914D\u7F6E\u90FD\u653E\u5728\u8FD9\u91CC\u3002\u6539\u52A8\u4F1A\u8FC1\u79FB\u73B0\u6709\u6587\u4EF6\uFF0C\u91CD\u542F Host \u540E\u751F\u6548\u3002"),
+      (0, import_react2.createElement)(
+        "div",
+        { className: "ageval-settings-row" },
+        (0, import_react2.createElement)("input", {
+          className: "ageval-settings-input",
+          value: draft,
+          spellCheck: false,
+          onChange: (event) => setDraft(event.target.value),
+          placeholder: storage?.defaultDir ?? "~/.dsh/ageval-viewer",
+          "aria-label": "\u6570\u636E\u76EE\u5F55"
+        }),
+        (0, import_react2.createElement)(Button, { disabled: saving || !draft.trim() || draft === storage?.dataDir, onClick: () => void saveDir() }, saving ? "\u4FDD\u5B58\u4E2D\u2026" : "\u4FDD\u5B58"),
+        (0, import_react2.createElement)(Button, { quiet: true, disabled: !draft.trim(), onClick: () => void openDir(), label: "\u6253\u5F00\u6570\u636E\u76EE\u5F55" }, "\u6253\u5F00\u6587\u4EF6\u5939")
+      ),
+      storage?.custom ? (0, import_react2.createElement)("p", { className: "ageval-cache-note" }, `\u9ED8\u8BA4\u4F4D\u7F6E\uFF1A${storage.defaultDir}\uFF1B\u8BBE\u7F6E\u6587\u4EF6\uFF1A${storage.settingsFile}`) : (0, import_react2.createElement)("p", { className: "ageval-cache-note" }, `\u9ED8\u8BA4\u4F4D\u7F6E\uFF0C\u672A\u81EA\u5B9A\u4E49\u3002\u8BBE\u7F6E\u6587\u4EF6\uFF1A${storage?.settingsFile ?? ""}`)
+    ),
+    (0, import_react2.createElement)(
+      "section",
+      { className: "ageval-settings-group" },
+      (0, import_react2.createElement)("h3", { className: "ageval-settings-title" }, "\u7F13\u5B58"),
       (0, import_react2.createElement)(
         "div",
         { className: "ageval-cache-summary" },
@@ -1361,27 +1484,175 @@ function CacheSettings({ onClose }) {
         (0, import_react2.createElement)("div", { className: "ageval-cache-actions" }, (0, import_react2.createElement)(Button, { onClick: () => setConfirm(false) }, "\u53D6\u6D88"), (0, import_react2.createElement)(Button, { accent: true, onClick: () => void action(true) }, "\u786E\u8BA4\u6E05\u7406"))
       ) : null,
       error ? (0, import_react2.createElement)("p", { className: "ageval-banner--error", role: "alert" }, error) : null,
-      message ? (0, import_react2.createElement)("p", { className: "ageval-banner--ok", role: "status" }, message) : null
-    ),
-    (0, import_react2.createElement)(
-      "div",
-      { className: "ageval-modal-foot" },
-      (0, import_react2.createElement)(Button, { quiet: true, disabled: busy, onClick: () => void action(false) }, "\u5237\u65B0\u72B6\u6001"),
-      (0, import_react2.createElement)(Button, { disabled: busy || !info?.entries || confirm, onClick: () => setConfirm(true) }, "\u6E05\u7406\u5185\u5B58\u7F13\u5B58")
+      message ? (0, import_react2.createElement)("p", { className: "ageval-banner--ok", role: "status" }, message) : null,
+      (0, import_react2.createElement)(
+        "div",
+        { className: "ageval-cache-actions" },
+        (0, import_react2.createElement)(Button, { quiet: true, disabled: busy, onClick: () => void action(false) }, "\u5237\u65B0\u72B6\u6001"),
+        (0, import_react2.createElement)(Button, { disabled: busy || !info?.entries || confirm, onClick: () => setConfirm(true) }, "\u6E05\u7406\u5185\u5B58\u7F13\u5B58")
+      )
     )
   );
 }
+function timeLabel(value) {
+  return value ? new Date(value).toLocaleString(void 0, { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "\u5C1A\u672A\u8BFB\u53D6";
+}
+function deltaLabel(delta) {
+  if (!delta) return "\u9996\u6B21\u89C2\u6D4B \xB7 \u5C1A\u65E0\u5BF9\u6BD4\u9636\u6BB5";
+  if (!delta.comparable) return "\u4E0D\u53EF\u76F4\u63A5\u5BF9\u6BD4\uFF1A" + delta.reason;
+  const signed = (n) => n == null ? "\u2014" : (n >= 0 ? "+" : "") + n;
+  return `\u51C0\u53D8\u5316 P ${signed(delta.pass)} / F ${signed(delta.fail)} / E ${signed(delta.error)}`;
+}
+function TrackingPanel() {
+  const [runs, setRuns] = (0, import_react2.useState)([]), [showArchived, setShowArchived] = (0, import_react2.useState)(false);
+  const [busy, setBusy] = (0, import_react2.useState)(""), [error, setError] = (0, import_react2.useState)("");
+  const [active, setActive] = (0, import_react2.useState)(null), [detail, setDetail] = (0, import_react2.useState)(null), [attempt, setAttempt] = (0, import_react2.useState)(null);
+  const [expanded, setExpanded] = (0, import_react2.useState)(""), [label, setLabel] = (0, import_react2.useState)("");
+  const alive = (0, import_react2.useRef)(true), version = (0, import_react2.useRef)(0);
+  const load = (0, import_react2.useCallback)(async () => {
+    const result = await readJson(API + "/tracking");
+    if (alive.current) setRuns(result.runs || []);
+  }, []);
+  (0, import_react2.useEffect)(() => {
+    alive.current = true;
+    let timer;
+    const tick = async () => {
+      try {
+        await load();
+      } catch (cause) {
+        if (alive.current) setError(cause.message);
+      }
+      if (alive.current) timer = setTimeout(tick, 5e3);
+    };
+    void tick();
+    return () => {
+      alive.current = false;
+      version.current++;
+      clearTimeout(timer);
+    };
+  }, [load]);
+  const action = async (route, body) => {
+    setBusy(body.id || "all");
+    setError("");
+    try {
+      await readJson(API + "/tracking/" + route, { method: "POST", body: JSON.stringify(body) });
+      await load();
+    } catch (cause) {
+      if (alive.current) setError(cause.message);
+    } finally {
+      if (alive.current) setBusy("");
+    }
+  };
+  const open = async (run) => {
+    const request = ++version.current;
+    setBusy(run.id);
+    setError("");
+    try {
+      const value = await readJson(API + "/tracking/suite?id=" + encodeURIComponent(run.id));
+      if (alive.current && request === version.current) {
+        setActive(run);
+        setDetail(value);
+        setAttempt(null);
+      }
+    } catch (cause) {
+      if (alive.current && request === version.current) setError(cause.message);
+    } finally {
+      if (alive.current && request === version.current) setBusy("");
+    }
+  };
+  const openAttempt = async (task, runId) => {
+    const request = ++version.current;
+    setBusy(active.id);
+    setError("");
+    try {
+      const value = await readJson(API + "/tracking/attempt?id=" + encodeURIComponent(active.id) + "&task=" + encodeURIComponent(task.taskId) + "&run=" + encodeURIComponent(runId));
+      if (alive.current && request === version.current) setAttempt(value);
+    } catch (cause) {
+      if (alive.current && request === version.current) setError(cause.message);
+    } finally {
+      if (alive.current && request === version.current) setBusy("");
+    }
+  };
+  if (attempt) return (0, import_react2.createElement)(AttemptView, { attempt, onBack: () => {
+    version.current++;
+    setAttempt(null);
+    setError("");
+  } });
+  if (detail) return (0, import_react2.createElement)(DetailView, { data: detail, selected: false, error, busy: busy ? dict.loading : "", onBack: () => {
+    version.current++;
+    setDetail(null);
+    setActive(null);
+    setError("");
+  }, onAttempt: openAttempt, onTiming: (task, runId) => readJson(API + "/tracking/timing?id=" + encodeURIComponent(active.id) + "&task=" + encodeURIComponent(task.taskId) + "&run=" + encodeURIComponent(runId)) });
+  const visible = runs.filter((run) => showArchived ? run.archived : !run.archived);
+  return (0, import_react2.createElement)(
+    "div",
+    { className: "ageval-tracking" },
+    (0, import_react2.createElement)(
+      "div",
+      { className: "ageval-tracking-toolbar" },
+      (0, import_react2.createElement)("span", { className: "ageval-source-caption" }, "Host \u81EA\u52A8\u91C7\u6837 \xB7 \u4E0D\u4F9D\u8D56 Agent \u6301\u7EED\u4E0A\u62A5"),
+      (0, import_react2.createElement)(Button, { quiet: true, onClick: () => setShowArchived((value) => !value) }, showArchived ? "\u8FD4\u56DE\u8FFD\u8E2A\u4E2D" : "\u5DF2\u5F52\u6863"),
+      (0, import_react2.createElement)(Button, { disabled: Boolean(busy), onClick: () => void action("refresh", {}) }, busy === "all" ? "\u5237\u65B0\u4E2D\u2026" : "\u5237\u65B0\u5168\u90E8")
+    ),
+    (0, import_react2.createElement)(Banner, { error }),
+    (0, import_react2.createElement)("div", { className: "ageval-tracking-scroll" }, visible.length ? visible.map((run) => {
+      const row = run.latest?.row;
+      return (0, import_react2.createElement)(
+        "section",
+        { key: run.id, className: "ageval-tracked-run" },
+        (0, import_react2.createElement)(
+          "button",
+          { type: "button", className: "ageval-tracked-open", onClick: () => void open(run), disabled: Boolean(busy) },
+          (0, import_react2.createElement)("div", { className: "ageval-suite-main" }, (0, import_react2.createElement)("div", { className: "ageval-suite-name" }, run.title), (0, import_react2.createElement)("div", { className: "ageval-subline" }, sourceDisplay(run.source)), (0, import_react2.createElement)("div", { className: "ageval-subline" }, run.dataset + " / " + run.suite)),
+          row ? (0, import_react2.createElement)(ScoreRing, { value: row.passRate }) : null
+        ),
+        (0, import_react2.createElement)("div", { className: "ageval-tracked-progress" }, row ? (0, import_react2.createElement)(Metrics, { row }) : (0, import_react2.createElement)("span", null, "\u7B49\u5F85\u8BC1\u636E"), row ? (0, import_react2.createElement)("span", null, `\u5B8C\u6210 ${row.finished ?? "\u2014"} / ${row.expected ?? "\u2014"}`) : null),
+        (0, import_react2.createElement)("p", { className: "ageval-tracking-delta" }, deltaLabel(run.latest?.delta)),
+        (0, import_react2.createElement)("p", { className: "ageval-tracking-meta" }, `\u8BB0\u5F55\u72B6\u6001 ${row?.status || "\u672A\u77E5"} \xB7 \u6700\u8FD1\u8BFB\u53D6 ${timeLabel(run.lastSuccess)} \xB7 ${run.refreshSeconds}s`, run.stale ? " \xB7 \u6570\u636E\u5DF2\u8FC7\u671F" : "", " \xB7 \u8FDB\u7A0B\u5B58\u6D3B\u672A\u9A8C\u8BC1", run.latest?.revision ? ` \xB7 ${run.latest.revision.slice(0, 8)}` : ""),
+        run.readError ? (0, import_react2.createElement)("p", { className: "ageval-tracking-error", role: "status" }, `${run.observation === "waiting" ? "\u7B49\u5F85\u8BC1\u636E" : "\u8BFB\u53D6\u5931\u8D25"}\uFF1A${run.readError}\uFF1B\u4FDD\u7559\u4E0A\u6B21\u7ED3\u679C`) : null,
+        (0, import_react2.createElement)(
+          "div",
+          { className: "ageval-tracking-actions" },
+          (0, import_react2.createElement)(Button, { disabled: Boolean(busy), onClick: () => void action("refresh", { id: run.id }) }, busy === run.id ? "\u8BFB\u53D6\u4E2D\u2026" : "\u5237\u65B0"),
+          (0, import_react2.createElement)(Button, { quiet: true, onClick: () => {
+            setExpanded((value) => value === run.id ? "" : run.id);
+            setLabel("");
+          } }, `\u9636\u6BB5 ${run.stages.length}`),
+          (0, import_react2.createElement)(Button, { quiet: true, disabled: Boolean(busy), onClick: () => void action("archive", { id: run.id, archived: !run.archived }) }, run.archived ? "\u6062\u590D\u8FFD\u8E2A" : "\u5F52\u6863")
+        ),
+        expanded === run.id ? (0, import_react2.createElement)(
+          "div",
+          { className: "ageval-stage-history" },
+          (0, import_react2.createElement)(
+            "form",
+            { className: "ageval-stage-form", onSubmit: (event) => {
+              event.preventDefault();
+              void action("refresh", { id: run.id, label: label.trim(), checkpoint: true });
+              setLabel("");
+            } },
+            (0, import_react2.createElement)("input", { className: "ageval-control", value: label, maxLength: 120, placeholder: "\u9636\u6BB5\u540D\u79F0\uFF08\u53EF\u9009\uFF09", "aria-label": "\u9636\u6BB5\u540D\u79F0", onChange: (event) => setLabel(event.target.value) }),
+            (0, import_react2.createElement)("button", { type: "submit", className: "ageval-button", disabled: Boolean(busy) }, "\u8BB0\u5F55\u9636\u6BB5")
+          ),
+          ...[...run.stages].reverse().map((stage, index) => (0, import_react2.createElement)("div", { key: stage.at + index, className: "ageval-stage-row" }, (0, import_react2.createElement)("span", null, `${stage.label} \xB7 ${timeLabel(stage.at)}`), (0, import_react2.createElement)(Metrics, { row: stage.row }), (0, import_react2.createElement)("span", { className: "ageval-source-caption" }, deltaLabel(stage.delta)), stage.delta?.transitions && Object.keys(stage.delta.transitions).length ? (0, import_react2.createElement)("span", { className: "ageval-source-caption" }, Object.entries(stage.delta.transitions).map(([key, count]) => `${key}: ${count}`).join(" \xB7 ")) : null))
+        ) : null
+      );
+    }) : (0, import_react2.createElement)("div", { className: "ageval-empty" }, showArchived ? "\u6CA1\u6709\u5DF2\u5F52\u6863\u8BB0\u5F55" : "\u6682\u65E0\u8FFD\u8E2A\u8BB0\u5F55\u3002Agent \u53EF\u8C03\u7528 ageval_register_run \u767B\u8BB0\uFF1B\u4E5F\u53EF\u5728\u6D4F\u89C8\u7ED3\u679C\u4E2D\u9009\u62E9 suite \u540E\u70B9\u51FB\u201C\u767B\u8BB0\u8FFD\u8E2A\u201D\u3002")),
+    (0, import_react2.createElement)("p", { className: "ageval-tracking-note" }, "\u81EA\u52A8\u5237\u65B0\u9ED8\u8BA4 60 \u79D2\uFF1B\u6709\u53D8\u5316\u65F6\u6BCF 5 \u5206\u949F\u8BB0\u5F55\u9636\u6BB5\uFF0C\u5B8C\u6210\u65F6\u7ACB\u5373\u8BB0\u5F55\u3002\u51C0\u53D8\u5316\u4E0D\u7B49\u4E8E\u65B0\u589E\u5B8C\u6210\u6570\uFF1B\u8BC4\u6D4B\u914D\u7F6E\u4E00\u81F4\u6027\u672A\u9A8C\u8BC1\u3002\u5F52\u6863\u53EA\u505C\u6B62\u91C7\u6837\uFF0C\u4E0D\u505C\u6B62\u5B9E\u9A8C\u3002")
+  );
+}
 function App({ ctx, props }) {
+  const [view, setView] = (0, import_react2.useState)("browse");
   const [root, setRoot] = (0, import_react2.useState)("");
   const [source, setSource] = (0, import_react2.useState)(null);
   const [scope, setScope] = (0, import_react2.useState)("");
   const [draftRoot, setDraftRoot] = (0, import_react2.useState)("");
   const [recent, setRecent] = (0, import_react2.useState)([]);
   const [sourceOpen, setSourceOpen] = (0, import_react2.useState)(false);
-  const [settingsOpen, setSettingsOpen] = (0, import_react2.useState)(false);
   const loadVersion = (0, import_react2.useRef)(0);
   const [rows, setRows] = (0, import_react2.useState)([]);
   const [query, setQuery] = (0, import_react2.useState)("");
+  const [sort, setSort] = (0, import_react2.useState)("time-desc");
   const [bench, setBench] = (0, import_react2.useState)("all");
   const [model, setModel] = (0, import_react2.useState)("all");
   const [status, setStatus] = (0, import_react2.useState)("all");
@@ -1441,6 +1712,20 @@ function App({ ctx, props }) {
   const removeSavedSource = async (picked) => {
     const config = await readJson(API + "/saved/remove", { method: "POST", body: JSON.stringify(picked) });
     setRecent(config.recent || []);
+  };
+  const registerSelected = async () => {
+    if (!source) return;
+    setLoading(true);
+    setError("");
+    try {
+      for (const row of Object.values(selected)) await readJson(API + "/tracking/register", { method: "POST", body: JSON.stringify({ source, dataset: row.dataset, suite: row.suite, title: [row.model, row.suite].filter(Boolean).join(" \xB7 "), reporter: sessionIdOf(ctx, props), followRef: source.kind === "github" }) });
+      setSelected({});
+      setView("tracking");
+    } catch (cause) {
+      setError(cause.message);
+    } finally {
+      setLoading(false);
+    }
   };
   const toggle = (row) => setSelected((prev) => {
     const key = row.dataset + "/" + row.suite;
@@ -1502,8 +1787,14 @@ function App({ ctx, props }) {
     const hay = (row.dataset + " " + (row.model || "") + " " + row.suite + " " + (row.harness || "")).toLowerCase();
     return (!needle || hay.includes(needle)) && (bench === "all" || row.dataset === bench) && (model === "all" || row.model === model) && (status === "all" || row.status === status) && (verdict === "all" || (verdict === "clean" ? row.clean : (row.error || 0) > 0));
   }), [rows, query, bench, model, status, verdict]);
-  const groups = (0, import_react2.useMemo)(() => Array.from(new Set(filtered.map((row) => row.dataset))).sort().map((name) => [name, filtered.filter((row) => row.dataset === name)]), [filtered]);
+  const groups = (0, import_react2.useMemo)(() => Array.from(new Set(filtered.map((row) => row.dataset))).sort().map((name) => [name, sortSuites(filtered.filter((row) => row.dataset === name), sort)]), [filtered, sort]);
   const filtering = Boolean(query || bench !== "all" || model !== "all" || status !== "all" || verdict !== "all");
+  if (view === "tracking") return (0, import_react2.createElement)(
+    "div",
+    { className: "ageval-viewer" },
+    (0, import_react2.createElement)("div", { className: "ageval-topbar" }, (0, import_react2.createElement)("div", { className: "ageval-heading" }, (0, import_react2.createElement)("h2", null, "ageval \xB7 \u8FFD\u8E2A\u4E2D"), (0, import_react2.createElement)("span", { className: "ageval-meta" }, "\u53EA\u8BFB\u5B9E\u9A8C\u6570\u636E"), (0, import_react2.createElement)(Button, { quiet: true, onClick: () => setView("browse") }, "\u6D4F\u89C8\u7ED3\u679C"))),
+    (0, import_react2.createElement)(TrackingPanel)
+  );
   if (attempt) return (0, import_react2.createElement)(AttemptView, { attempt, onBack: () => {
     setAttempt(null);
     setError("");
@@ -1511,14 +1802,14 @@ function App({ ctx, props }) {
   if (detail) return (0, import_react2.createElement)(DetailView, { data: detail, selected: Boolean(selected[detail.row.dataset + "/" + detail.row.suite]), error, busy: pending ? dict.loading : "", onBack: () => {
     setDetail(null);
     setError("");
-  }, onToggle: () => toggle(detail.row), onAttempt: openAttempt });
+  }, onToggle: () => toggle(detail.row), onAttempt: openAttempt, onTiming: (task, runId) => readJson(API + "/timing?dataset=" + encodeURIComponent(detail.row.dataset) + "&suite=" + encodeURIComponent(detail.row.suite) + "&task=" + encodeURIComponent(task.taskId) + "&run=" + encodeURIComponent(runId), void 0, scope) });
   return (0, import_react2.createElement)(
     "div",
     { className: "ageval-viewer" },
     (0, import_react2.createElement)(
       "div",
       { className: "ageval-topbar" },
-      (0, import_react2.createElement)("div", { className: "ageval-heading" }, (0, import_react2.createElement)("h2", null, dict.title), (0, import_react2.createElement)("span", { className: "ageval-meta" }, (loading ? dict.loading + " \xB7 " : "") + dict.readOnly + " \xB7 " + filtered.length + "/" + rows.length), (0, import_react2.createElement)(Button, { quiet: true, onClick: () => void load(), disabled: loading }, dict.refresh), (0, import_react2.createElement)(Button, { quiet: true, onClick: () => setSettingsOpen(true), label: "\u6253\u5F00\u8BBE\u7F6E" }, "\u8BBE\u7F6E")),
+      (0, import_react2.createElement)("div", { className: "ageval-heading" }, (0, import_react2.createElement)("h2", null, dict.title), (0, import_react2.createElement)("span", { className: "ageval-meta" }, (loading ? dict.loading + " \xB7 " : "") + dict.readOnly + " \xB7 " + filtered.length + "/" + rows.length), (0, import_react2.createElement)(Button, { quiet: true, onClick: () => setView("tracking") }, "\u8FFD\u8E2A\u4E2D"), (0, import_react2.createElement)(Button, { quiet: true, onClick: () => void load(), disabled: loading }, dict.refresh)),
       (0, import_react2.createElement)(
         "div",
         { className: "ageval-root-row" },
@@ -1534,7 +1825,7 @@ function App({ ctx, props }) {
           if (item) void chooseSource(item).catch((e) => setError(e.message));
         }, options: recent.map((item, index) => [String(index), sourceDisplay(item)]) }) : null
       ),
-      (0, import_react2.createElement)("input", { className: "ageval-control ageval-filter-search", value: query, placeholder: dict.search, onChange: (event) => setQuery(event.target.value) }),
+      (0, import_react2.createElement)(import_dsh_client_ui_primitives.Input, { className: "ageval-search-input", icon: icon("search"), value: query, placeholder: dict.search, "aria-label": dict.search, onChange: (event) => setQuery(event.target.value) }),
       (0, import_react2.createElement)(
         "div",
         { className: "ageval-filter-row" },
@@ -1551,7 +1842,13 @@ function App({ ctx, props }) {
         } }, dict.clear) : null
       )
     ),
-    (0, import_react2.createElement)("div", { className: "ageval-summary" }, (0, import_react2.createElement)("strong", null, filtered.length + " " + dict.suites), (0, import_react2.createElement)("span", null, filtered.reduce((sum, row) => sum + (row.expected || 0), 0) + " " + dict.tasksCount)),
+    (0, import_react2.createElement)(
+      "div",
+      { className: "ageval-summary" },
+      (0, import_react2.createElement)("strong", null, filtered.length + " " + dict.suites),
+      (0, import_react2.createElement)("span", null, filtered.reduce((sum, row) => sum + (row.expected || 0), 0) + " " + dict.tasksCount),
+      (0, import_react2.createElement)(CustomSelect, { className: "ageval-sort-select", value: sort, onChange: setSort, aria: "Suite \u6392\u5E8F\uFF08\u5404 bench \u5185\uFF09", options: [["time-desc", "\u521B\u5EFA\u65F6\u95F4 \xB7 \u6700\u65B0\u5728\u524D"], ["time-asc", "\u521B\u5EFA\u65F6\u95F4 \xB7 \u6700\u65E9\u5728\u524D"], ["rate-desc", "\u901A\u8FC7\u7387 \xB7 \u4ECE\u9AD8\u5230\u4F4E"], ["rate-asc", "\u901A\u8FC7\u7387 \xB7 \u4ECE\u4F4E\u5230\u9AD8"], ["name-asc", "Suite \u540D\u79F0 \xB7 \u5347\u5E8F"]] })
+    ),
     !root ? (0, import_react2.createElement)("div", { className: "ageval-empty" }, dict.noRoot) : (0, import_react2.createElement)("div", { className: "ageval-scroll" }, loading && !rows.length ? (0, import_react2.createElement)("div", { className: "ageval-empty" }, dict.loading) : groups.length ? groups.map(([name, items]) => (0, import_react2.createElement)("section", { key: name, className: "ageval-group" }, (0, import_react2.createElement)("div", { className: "ageval-group-title" }, benchLabel(name, root), (0, import_react2.createElement)("span", { className: "ageval-group-count" }, items.length + " " + dict.suites)), (0, import_react2.createElement)(SuiteList, { rows: items, selected, onToggle: toggle, onOpen: open }))) : (0, import_react2.createElement)("div", { className: "ageval-empty" }, dict.empty)),
     (0, import_react2.createElement)(Banner, { error, message }),
     (0, import_react2.createElement)(
@@ -1567,12 +1864,12 @@ function App({ ctx, props }) {
         "div",
         { className: "ageval-composer-actions" },
         (0, import_react2.createElement)(Button, { quiet: true, onClick: () => setSelectionOpen(true), disabled: !Object.keys(selected).length }, Object.keys(selected).length + " " + dict.selected),
+        (0, import_react2.createElement)(Button, { onClick: () => void registerSelected(), disabled: loading || !Object.keys(selected).length }, "\u767B\u8BB0\u8FFD\u8E2A"),
         (0, import_react2.createElement)(Button, { onClick: () => void send("current"), disabled: loading }, dict.send),
         (0, import_react2.createElement)(Button, { onClick: () => void send("new"), disabled: loading }, dict.newSession)
       )
     ),
     sourceOpen ? (0, import_react2.createElement)(SourcePicker, { source, recent, onChoose: chooseSource, onRemove: removeSavedSource, onClose: () => setSourceOpen(false) }) : null,
-    settingsOpen ? (0, import_react2.createElement)(CacheSettings, { onClose: () => setSettingsOpen(false) }) : null,
     selectionOpen ? (0, import_react2.createElement)("div", { className: "ageval-modal-backdrop", role: "presentation", onClick: () => setSelectionOpen(false) }, (0, import_react2.createElement)(
       "div",
       { className: "ageval-modal", role: "dialog", "aria-modal": true, onClick: (event) => event.stopPropagation() },
@@ -1591,11 +1888,18 @@ function apply(ctx) {
   injectCss();
   const tabs = get(ctx, "sidebarRightTabs");
   const slots = get(ctx, "slots");
-  if (!tabs || !slots) return;
   try {
     ctx.locale?.register?.(NS, { zh, en: zh });
   } catch {
   }
+  if (slots) ctx.effect(() => slots.inject("settings.section", () => slots.register({
+    name: "settings.section",
+    id: "ageval-viewer",
+    order: 60,
+    locale: NS,
+    label: () => "ageval \u8BC4\u6D4B\u8FFD\u8E2A"
+  }, () => (0, import_react2.createElement)(SettingsPage, null))));
+  if (!tabs || !slots) return;
   ctx.effect(() => tabs.register({ id: TAB_ID, kind: "fstack.ageval", title, guide: [{ id: TAB_ID, order: 32, title, description: () => dict.guide }] }));
   ctx.effect(() => slots.inject("sidebar.right.pane.tab", () => slots.register({ name: "sidebar.right.pane.tab", key: TAB_ID }, (slotProps) => (0, import_react2.createElement)(App, { ctx, props: slotProps }))));
 }

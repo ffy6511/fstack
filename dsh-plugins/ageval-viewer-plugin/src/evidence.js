@@ -1,3 +1,4 @@
+import { timingOf, timestamp } from './display.js';
 import { open, readdir, realpath, stat } from 'node:fs/promises';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 
@@ -66,7 +67,7 @@ export function rowOf(dataset, suite, summary, progress) {
     pass, fail, error, skipped, observed, expected, finished,
     passRate: expected > 0 && pass !== null ? pass / expected : null,
     clean: Boolean(summary && status === 'complete' && error === 0 && expected > 0 && finished === expected),
-    createdAt: source.created_at ?? null, hasSummary: summary !== null,
+    createdAt: timestamp(source.created_at), ...timingOf(source), hasSummary: summary !== null,
     summaryPath: `${dataset}/.ageval/suite-runs/${suite}/summary.json`,
     warnings: [...(!summary ? ['No summary: not a completed result'] : []), ...(observed !== null && expected !== null && observed !== expected ? ['Counts do not match expected task count'] : []), ...(status === 'running' ? ['Recorded status only; process liveness is not verified'] : [])],
   };
@@ -124,14 +125,28 @@ export async function suiteDetail(root, dataset, suite) {
 export function detailOf(dataset, suite, summary, progress) {
   const source = summary ?? progress ?? {};
   const refs = new Map((source.task_refs || []).map(t => [t.task_id, t]));
-  const tasks = tasksOf(source).map(raw => { const task = { ...refs.get(raw.task_id), ...raw }; return ({
-    taskId: text(task.task_id), status: text(task.status) || 'unknown', score: task.score ?? null,
+  const attempts = new Map((source.attempts || []).map(a => [a.run_id, a]));
+  const tasks = tasksOf(source).map(raw => { const task = { ...refs.get(raw.task_id), ...raw }; const timing = { ...timingOf(attempts.get(task.run_id)) }; for (const [key, value] of Object.entries(timingOf(task))) if (value != null) timing[key] = value; return ({
+    ...timing, taskId: text(task.task_id), status: text(task.status) || 'unknown', score: task.score ?? null,
     errorTitle: text(task.error?.title), errorMessage: redact(text(task.error?.message)).slice(0, 2000),
     runId: text(task.run_id), runIds: [...new Set([task.run_id, ...(Array.isArray(task.attempt_run_ids) ? task.attempt_run_ids : [])].filter(x => typeof x === 'string' && x))],
   }); });
   const errors = {};
   for (const task of tasks) if (task.errorTitle) errors[task.errorTitle] = (errors[task.errorTitle] ?? 0) + 1;
   return { row: rowOf(dataset, suite, summary, progress), tasks, errors, actors: (source.actors_summary ?? []).map(a => ({ role: a.profile_id, model: a.model, executor: a.executor })) };
+}
+export async function taskTiming(root, dataset, suite, taskId, requestedRun) {
+  segment(taskId);
+  const detail = await suiteDetail(root, dataset, suite);
+  const task = detail.tasks.find(t => t.taskId === taskId);
+  const runId = requestedRun || task?.runId; segment(runId);
+  if (!task?.runIds.includes(runId)) throw new EvidenceError('Attempt does not belong to selected task', 403);
+  const base = await datasetPath(root, dataset);
+  for (const dir of [resolve(base, '.ageval/runs', runId), resolve(base, 'tasks', taskId, '.ageval/runs', runId)]) {
+    try { const summary = await optionalJson(root, resolve(dir, 'summary.json')); if (summary) return { ...timingOf(summary), runId }; }
+    catch (e) { if (e.code !== 'ENOENT') throw e; }
+  }
+  return { ...timingOf(), runId };
 }
 export async function attemptDetail(root, dataset, suite, taskId, requestedRun) {
   segment(taskId);

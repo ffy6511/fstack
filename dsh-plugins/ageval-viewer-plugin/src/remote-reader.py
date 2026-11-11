@@ -111,7 +111,7 @@ def perform():
                         doc = documents(base, dataset, entry.name)
                         # Return only fields used by the shared row projection.
                         src = doc['summary'] if doc['summary'] is not None else doc['progress'] or {}
-                        fields = {k: src.get(k) for k in ('counts', 'model_label', 'agent_label', 'status', 'created_at', 'n_tasks', 'metrics') if k in src}
+                        fields = {k: src.get(k) for k in ('counts', 'model_label', 'agent_label', 'status', 'created_at', 'started_at', 'finished_at', 'duration_ms', 'n_tasks', 'metrics') if k in src}
                         fields['n_tasks'] = src.get('n_tasks') or len(src.get('task_ids') or src.get('tasks') or src.get('task_refs') or []) or (src.get('metrics') or {}).get('n_tasks')
                         rows.append({'dataset': dataset, 'suite': entry.name, 'summary': fields if doc['summary'] is not None else None, 'progress': fields if doc['summary'] is None else None})
                     except (OSError, ValueError) as error:
@@ -119,6 +119,22 @@ def perform():
         return {'documents': rows, 'warnings': warnings}
     if op == 'suite':
         return documents(base, request['dataset'], request['suite'])
+    if op == 'timing':
+        dataset, suite, task = request['dataset'], request['suite'], request['task']
+        identifier(task)
+        doc = documents(base, dataset, suite)
+        src = doc['summary'] if doc['summary'] is not None else doc['progress'] or {}
+        refs = [t for t in (src.get('tasks') or []) + (src.get('task_refs') or []) if t.get('task_id') == task]
+        run = request.get('run') or next((t.get('run_id') for t in refs if t.get('run_id')), None)
+        identifier(run)
+        ids = [r for t in refs for r in [t.get('run_id')] + (t.get('attempt_run_ids') or [])]
+        if run not in ids:
+            raise ValueError('Attempt does not belong to selected task')
+        for path in [os.path.join(base, dataset, '.ageval', 'runs', run, 'summary.json'), os.path.join(base, dataset, 'tasks', task, '.ageval', 'runs', run, 'summary.json')]:
+            summary = optional(base, path)
+            if summary is not None:
+                return {k: summary.get(k) for k in ('phase_timing', 'started_at', 'started', 'finished_at', 'finished', 'duration_ms') if k in summary}
+        return {}
     if op == 'attempt':
         dataset, suite, task = request['dataset'], request['suite'], request['task']
         identifier(task)

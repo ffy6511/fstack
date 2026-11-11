@@ -30,6 +30,7 @@ const compiled = spawnSync(esbuild, [
   '--platform=browser',
   '--target=es2022',
   '--external:react',
+  '--external:@deepseek-ai/dsh-client-ui-primitives',
   '--outfile=' + outfile,
 ], { stdio: 'inherit' });
 if (compiled.status) process.exit(compiled.status ?? 1);
