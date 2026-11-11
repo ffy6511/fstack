@@ -1,5 +1,5 @@
 import { sortSuites, formatTimestamp, formatDuration } from './display.js';
-import { Button as HostButton, Checkbox as HostCheckbox, Input as HostInput, SegmentedControl as HostSegments, IconFolderOpenOutlineRegular as BenchIcon, IconChecklistOutlineRegular as CountsIcon, IconCheckCircleOutlineRegular as RateIcon, IconClockOutlineRegular as TimeIcon } from '@deepseek-ai/dsh-client-ui-primitives';
+import { Button as HostButton, Checkbox as HostCheckbox, Input as HostInput, SegmentedControl as HostSegments, IconFolderOpenOutlineRegular as BenchIcon, IconChecklistOutlineRegular as CountsIcon, IconCheckCircleOutlineRegular as RateIcon, IconClockOutlineRegular as TimeIcon, Tooltip as HostTooltip, IconBrowseOutlineRegular as BrowseIcon, IconRefreshOutlineRegular as RefreshIcon, IconSendOutlineRegular as SendIcon, IconPlusOutlineRegular as PlusIcon, IconArchiveOutlineRegular as ArchiveIcon, IconArchiveOffOutlineRegular as RestoreIcon, IconTrashOutlineRegular as TrashIcon, Switch as HostSwitch, IconInfoOutlineRegular as InfoIcon } from '@deepseek-ai/dsh-client-ui-primitives';
 import { CustomSelect as Select } from './select';
 import { createElement as h, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -147,6 +147,10 @@ function Button({ children, onClick, disabled, accent = false, quiet = false, cl
   return h(HostButton, { size: 'sm', variant: accent ? 'primary' : quiet ? 'ghost' : 'outline', className: 'ageval-host-button' + (className ? ' ' + className : ''), onClick, disabled, 'aria-label': label }, children);
 }
 
+export function ActionIcon({ glyph, label, onClick, disabled = false, accent = false, type = 'button' }: any) {
+  return h(HostTooltip, { label, side: 'top', portal: true },
+    h(HostButton, { type, size: 'sm', variant: accent ? 'primary' : 'ghost', className: 'ageval-action-icon', 'aria-label': label, disabled, onClick }, h(glyph, { width: 16, height: 16, 'aria-hidden': true })));
+}
 function ScoreRing({ value }: { value?: number | null }) {
   if (value == null || !Number.isFinite(value)) return h('span', { className: 'ageval-ring' }, '-');
   const ratio = Math.max(0, Math.min(1, value));
@@ -725,15 +729,70 @@ function deltaLabel(delta: any): string {
   const signed = (n: number | null) => n == null ? '—' : (n >= 0 ? '+' : '') + n;
   return `净变化 P ${signed(delta.pass)} / F ${signed(delta.fail)} / E ${signed(delta.error)}`;
 }
-function TrackingPanel() {
+export function TrackingTable({ runs, selectedIds, sending, busy, onToggle, onOpen, onRefresh, onArchive, onStage, onAutoUpdate, onRemove, onInfo, infoId, expanded, label, setLabel, onCheckpoint }: any) {
+  const heading = (glyph: any, text: string) => h('span', { className: 'ageval-column-title' }, h(glyph, { width: 14, height: 14, 'aria-hidden': true }), text);
+  return h('table', { className: 'ageval-suite-table ageval-tracking-table', 'aria-label': '追踪实验阶段进度' },
+    h('colgroup', null, h('col', { className: 'ageval-col-check' }), h('col'), h('col', { className: 'ageval-col-rate' }), h('col', { className: 'ageval-col-counts' }), h('col', { className: 'ageval-col-delta' }), h('col', { className: 'ageval-col-time' }), h('col', { className: 'ageval-col-actions' })),
+    ...runs.map((run: any) => {
+      const stages = [...run.stages];
+      const last = stages.at(-1);
+      if (!run.suppressLatestPreview && run.latest && (!last || last.row && JSON.stringify([last.row, last.revision]) !== JSON.stringify([run.latest.row, run.latest.revision]))) stages.push({ ...run.latest, label: '当前观测', preview: true });
+      return h('tbody', { key: run.id, 'aria-label': run.title },
+        h('tr', { className: 'ageval-suite-group-row ageval-tracking-group-row' },
+          h('th', { className: 'ageval-table-check' }, h(HostCheckbox, { className: 'ageval-check ageval-check--compact', checked: selectedIds.includes(run.id), disabled: sending || (!selectedIds.includes(run.id) && selectedIds.length >= 24), onChange: () => onToggle(run.id), label: '加入 AI 分析：' + run.title })),
+          h('th', { scope: 'rowgroup', className: 'ageval-table-identity' }, h('button', { type: 'button', className: 'ageval-suite-link', onClick: () => onOpen(run), disabled: Boolean(busy), title: run.title }, run.title)),
+          h('th', { scope: 'col', className: 'ageval-table-rate' }, heading(RateIcon, '通过率')),
+          h('th', { scope: 'col', className: 'ageval-table-counts' }, heading(CountsIcon, 'P / F / E')),
+          h('th', { scope: 'col', className: 'ageval-table-delta' }, 'ΔP / ΔF / ΔE'),
+          h('th', { scope: 'col', className: 'ageval-table-time' }, heading(TimeIcon, '采样时间')),
+          h('th', { className: 'ageval-table-actions' }, h('div', { className: 'ageval-floating-actions', role: 'group', 'aria-label': 'Suite 追踪操作' },
+            h(HostTooltip, { label: '自动更新追踪记录', side: 'top', portal: true }, h('span', { className: 'ageval-auto-switch' }, h(HostSwitch, { checked: run.autoUpdate !== false, disabled: Boolean(busy), label: '自动更新追踪记录', onChange: (enabled: boolean) => onAutoUpdate(run.id, enabled) }))),
+            h(ActionIcon, { glyph: RefreshIcon, label: '刷新并记录本次结果', disabled: Boolean(busy), onClick: () => onRefresh(run.id) }),
+            h(ActionIcon, { glyph: PlusIcon, label: '记录命名阶段', disabled: Boolean(busy), onClick: () => onStage(run.id) }),
+            h(ActionIcon, { glyph: InfoIcon, label: '查看来源与采样设置', onClick: () => onInfo(run.id) }),
+            h(ActionIcon, { glyph: run.archived ? RestoreIcon : ArchiveIcon, label: run.archived ? '恢复追踪' : '归档（不停止实验）', disabled: Boolean(busy), onClick: () => onArchive(run) })))),
+        infoId === run.id ? h('tr', null, h('td', { colSpan: 7 }, h('dl', { className: 'ageval-run-details' },
+          h('dt', null, '数据源'), h('dd', null, sourceDisplay(run.source)), h('dt', null, 'Suite'), h('dd', null, run.dataset + '/' + run.suite),
+          h('dt', null, '采样方式'), h('dd', null, run.autoUpdate === false ? '仅手动刷新' : '自动更新 · ' + run.refreshSeconds + ' 秒'),
+          h('dt', null, '最近读取'), h('dd', null, timeLabel(run.lastSuccess)), h('dt', null, '证据状态'), h('dd', null, run.readError || run.latest?.row?.status || '等待证据'),
+          h('dt', null, '存活检查'), h('dd', null, '未验证')))) : null,
+        ...stages.map((stage: any, index: number) => {
+          const d = stage.delta;
+          const signed = (value: any) => typeof value === 'number' ? (value >= 0 ? '+' : '') + value : '—';
+          return h('tr', { key: stage.id || stage.at + ':' + index, className: 'ageval-tracking-stage-row' },
+            h('td', { className: 'ageval-stage-mark', 'aria-hidden': true }, h(index === 0 ? BenchIcon : TimeIcon, { width: 14, height: 14 })),
+            h('td', { className: 'ageval-table-identity' }, h('span', { className: 'ageval-stage-label' }, stage.label),
+              h('div', { className: 'ageval-subline', title: stage.readError || undefined }, stage.readError ? '读取失败 · ' + stage.readError : `完成 ${stage.row?.finished ?? '—'} / ${stage.row?.expected ?? '—'}`)),
+            h('td', { className: 'ageval-table-rate' }, h(ScoreRing, { value: stage.row?.passRate })),
+            h('td', { className: 'ageval-table-counts' }, stage.row ? h(Metrics, { row: stage.row, compact: true }) : '—'),
+            h('td', { className: 'ageval-table-delta', title: deltaLabel(d) }, d?.comparable ? [d.pass, d.fail, d.error].map(signed).join(' / ') : d ? '不可比较' : '—'),
+            h('td', { className: 'ageval-table-time' }, h('time', { dateTime: stage.at, title: stage.at }, formatTimestamp(stage.at))),
+            h('td', { className: 'ageval-table-actions' }, stage.id ? h('div', { className: 'ageval-floating-actions ageval-stage-actions', role: 'group', 'aria-label': '本次采样操作' }, h(ActionIcon, { glyph: TrashIcon, label: '删除这次采样记录', disabled: Boolean(busy), onClick: () => onRemove(run, stage) })) : null));
+        }),
+        !stages.length ? h('tr', null, h('td', { colSpan: 7, className: 'ageval-source-caption' }, '暂无采样记录，点击刷新记录一次结果。')) : null,
+        expanded === run.id ? h('tr', null, h('td', null), h('td', { colSpan: 6 }, h('form', { className: 'ageval-stage-form', onSubmit: (event: any) => { event.preventDefault(); onCheckpoint(run.id); } },
+          h('input', { className: 'ageval-control', value: label, maxLength: 120, placeholder: '阶段名称（可选）', 'aria-label': '阶段名称', onChange: (event: any) => setLabel(event.target.value) }),
+          h(ActionIcon, { glyph: PlusIcon, label: '保存阶段检查点', type: 'submit', disabled: Boolean(busy) })))) : null);
+    }));
+}
+export function TrackingPanel({ ctx, props }: { ctx: any; props: any }) {
+  const [selectedIds, setSelectedIds] = useState<string[]>([]), [question, setQuestion] = useState('');
+  const [sending, setSending] = useState(false), [message, setMessage] = useState('');
+  const [selectionOpen, setSelectionOpen] = useState(false);
   const [runs, setRuns] = useState<any[]>([]), [showArchived, setShowArchived] = useState(false);
   const [busy, setBusy] = useState(''), [error, setError] = useState('');
   const [active, setActive] = useState<any>(null), [detail, setDetail] = useState<DetailData | null>(null), [attempt, setAttempt] = useState<Attempt | null>(null);
   const [expanded, setExpanded] = useState(''), [label, setLabel] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<any>(null);
+  const [infoId, setInfoId] = useState('');
   const alive = useRef(true), version = useRef(0);
   const load = useCallback(async () => {
     const result = await readJson(API + '/tracking');
-    if (alive.current) setRuns(result.runs || []);
+    if (alive.current) {
+      setRuns(result.runs || []);
+      const valid = new Set((result.runs || []).map((run: any) => run.id));
+      setSelectedIds(ids => ids.filter(id => valid.has(id)));
+    }
   }, []);
   useEffect(() => {
     alive.current = true; let timer: ReturnType<typeof setTimeout>;
@@ -745,8 +804,8 @@ function TrackingPanel() {
   }, [load]);
   const action = async (route: string, body: any) => {
     setBusy(body.id || 'all'); setError('');
-    try { await readJson(API + '/tracking/' + route, { method: 'POST', body: JSON.stringify(body) }); await load(); }
-    catch (cause: any) { if (alive.current) setError(cause.message); }
+    try { await readJson(API + '/tracking/' + route, { method: 'POST', body: JSON.stringify(body) }); await load(); return true; }
+    catch (cause: any) { if (alive.current) setError(cause.message); return false; }
     finally { if (alive.current) setBusy(''); }
   };
   const open = async (run: any) => {
@@ -761,36 +820,63 @@ function TrackingPanel() {
     catch (cause: any) { if (alive.current && request === version.current) setError(cause.message); }
     finally { if (alive.current && request === version.current) setBusy(''); }
   };
+  const toggleAnalysis = (id: string) => setSelectedIds(ids => ids.includes(id) ? ids.filter(value => value !== id) : ids.length < 24 ? [...ids, id] : ids);
+  const sendAnalysis = async (target: 'current' | 'new') => {
+    if (sending || !selectedIds.length) return;
+    let sessionId = sessionIdOf(ctx, props);
+    if (target === 'current' && !sessionId) { setError(dict.currentUnavailable); return; }
+    setSending(true); setError(''); setMessage('');
+    try {
+      const body = await readJson(API + '/tracking/context', { method: 'POST', body: JSON.stringify({ ids: selectedIds, question }) });
+      const sessions = get(ctx, 'sessions');
+      if (target === 'new') sessionId = await sessions.create({});
+      const conversation = sessions?.scope(sessionId)?.get?.('conversation');
+      if (!conversation?.send) throw new Error(dict.currentUnavailable);
+      await conversation.send(body.text);
+      if (alive.current) setMessage(dict.sent);
+    } catch (cause: any) { if (alive.current) setError(cause.message); }
+    finally { if (alive.current) setSending(false); }
+  };
   if (attempt) return h(AttemptView, { attempt, onBack: () => { version.current++; setAttempt(null); setError(''); } });
-  if (detail) return h(DetailView, { data: detail, selected: false, error, busy: busy ? dict.loading : '', onBack: () => { version.current++; setDetail(null); setActive(null); setError(''); }, onAttempt: openAttempt, onTiming: (task: Task, runId: string) => readJson(API + '/tracking/timing?id=' + encodeURIComponent(active.id) + '&task=' + encodeURIComponent(task.taskId) + '&run=' + encodeURIComponent(runId)) });
+  if (detail) return h(DetailView, { data: detail, selected: selectedIds.includes(active.id), error, busy: busy ? dict.loading : '', onBack: () => { version.current++; setDetail(null); setActive(null); setError(''); }, onToggle: () => toggleAnalysis(active.id), onAttempt: openAttempt, onTiming: (task: Task, runId: string) => readJson(API + '/tracking/timing?id=' + encodeURIComponent(active.id) + '&task=' + encodeURIComponent(task.taskId) + '&run=' + encodeURIComponent(runId)) });
   const visible = runs.filter(run => showArchived ? run.archived : !run.archived);
   return h('div', { className: 'ageval-tracking' },
     h('div', { className: 'ageval-tracking-toolbar' },
-      h('span', { className: 'ageval-source-caption' }, 'Host 自动采样 · 不依赖 Agent 持续上报'),
-      h(Button, { quiet: true, onClick: () => setShowArchived(value => !value) }, showArchived ? '返回追踪中' : '已归档'),
-      h(Button, { disabled: Boolean(busy), onClick: () => void action('refresh', {}) }, busy === 'all' ? '刷新中…' : '刷新全部')),
-    h(Banner, { error }),
-    h('div', { className: 'ageval-tracking-scroll' }, visible.length ? visible.map(run => {
-      const row = run.latest?.row;
-      return h('section', { key: run.id, className: 'ageval-tracked-run' },
-        h('button', { type: 'button', className: 'ageval-tracked-open', onClick: () => void open(run), disabled: Boolean(busy) },
-          h('div', { className: 'ageval-suite-main' }, h('div', { className: 'ageval-suite-name' }, run.title), h('div', { className: 'ageval-subline' }, sourceDisplay(run.source)), h('div', { className: 'ageval-subline' }, run.dataset + ' / ' + run.suite)),
-          row ? h(ScoreRing, { value: row.passRate }) : null),
-        h('div', { className: 'ageval-tracked-progress' }, row ? h(Metrics, { row }) : h('span', null, '等待证据'), row ? h('span', null, `完成 ${(row as any).finished ?? '—'} / ${row.expected ?? '—'}`) : null),
-        h('p', { className: 'ageval-tracking-delta' }, deltaLabel(run.latest?.delta)),
-        h('p', { className: 'ageval-tracking-meta' }, `记录状态 ${row?.status || '未知'} · 最近读取 ${timeLabel(run.lastSuccess)} · ${run.refreshSeconds}s`, run.stale ? ' · 数据已过期' : '', ' · 进程存活未验证', run.latest?.revision ? ` · ${run.latest.revision.slice(0, 8)}` : ''),
-        run.readError ? h('p', { className: 'ageval-tracking-error', role: 'status' }, `${run.observation === 'waiting' ? '等待证据' : '读取失败'}：${run.readError}；保留上次结果`) : null,
-        h('div', { className: 'ageval-tracking-actions' },
-          h(Button, { disabled: Boolean(busy), onClick: () => void action('refresh', { id: run.id }) }, busy === run.id ? '读取中…' : '刷新'),
-          h(Button, { quiet: true, onClick: () => { setExpanded(value => value === run.id ? '' : run.id); setLabel(''); } }, `阶段 ${run.stages.length}`),
-          h(Button, { quiet: true, disabled: Boolean(busy), onClick: () => void action('archive', { id: run.id, archived: !run.archived }) }, run.archived ? '恢复追踪' : '归档')),
-        expanded === run.id ? h('div', { className: 'ageval-stage-history' },
-          h('form', { className: 'ageval-stage-form', onSubmit: (event: any) => { event.preventDefault(); void action('refresh', { id: run.id, label: label.trim(), checkpoint: true }); setLabel(''); } },
-            h('input', { className: 'ageval-control', value: label, maxLength: 120, placeholder: '阶段名称（可选）', 'aria-label': '阶段名称', onChange: (event: any) => setLabel(event.target.value) }),
-            h('button', { type: 'submit', className: 'ageval-button', disabled: Boolean(busy) }, '记录阶段')),
-          ...[...run.stages].reverse().map((stage: any, index: number) => h('div', { key: stage.at + index, className: 'ageval-stage-row' }, h('span', null, `${stage.label} · ${timeLabel(stage.at)}`), h(Metrics, { row: stage.row }), h('span', { className: 'ageval-source-caption' }, deltaLabel(stage.delta)), stage.delta?.transitions && Object.keys(stage.delta.transitions).length ? h('span', { className: 'ageval-source-caption' }, Object.entries(stage.delta.transitions).map(([key, count]) => `${key}: ${count}`).join(' · ')) : null))) : null);
+      h('span', { className: 'ageval-source-caption' }, '采样记录'),
+      h(ActionIcon, { glyph: showArchived ? TimeIcon : ArchiveIcon, label: showArchived ? '返回追踪中' : '查看已归档', onClick: () => setShowArchived(value => !value) }),
+      h(ActionIcon, { glyph: RefreshIcon, label: busy === 'all' ? '刷新中…' : '刷新全部', disabled: Boolean(busy), onClick: () => void action('refresh', {}) })),
+    h(Banner, { error, message }),
+    h('div', { className: 'ageval-tracking-scroll' }, visible.length ? h(TrackingTable, {
+      runs: visible, selectedIds, sending, busy, onToggle: toggleAnalysis, onOpen: open,
+      onRefresh: (id: string) => void action('refresh', { id }),
+      onArchive: (run: any) => void action('archive', { id: run.id, archived: !run.archived }),
+      onAutoUpdate: (id: string, enabled: boolean) => void action('auto-update', { id, enabled }),
+      onRemove: (run: any, stage: any) => setDeleteTarget({ id: run.id, title: run.title, stage }),
+      infoId, onInfo: (id: string) => setInfoId(value => value === id ? '' : id),
+      onStage: (id: string) => { setExpanded(value => value === id ? '' : id); setLabel(''); }, expanded, label, setLabel,
+      onCheckpoint: (id: string) => { void action('refresh', { id, label: label.trim(), checkpoint: true }); setLabel(''); },
     }) : h('div', { className: 'ageval-empty' }, showArchived ? '没有已归档记录' : '暂无追踪记录。Agent 可调用 ageval_register_run 登记；也可在浏览结果中选择 suite 后点击“登记追踪”。')),
-    h('p', { className: 'ageval-tracking-note' }, '自动刷新默认 60 秒；有变化时每 5 分钟记录阶段，完成时立即记录。净变化不等于新增完成数；评测配置一致性未验证。归档只停止采样，不停止实验。'));
+    h('p', { className: 'ageval-tracking-note' }, '手动刷新每次保存一行；自动采样有变化时每 5 分钟保存。Δ 为净变化，进程存活未验证。'),
+    h('div', { className: 'ageval-composer' },
+      h('input', { className: 'ageval-control', value: question, disabled: sending, placeholder: '让 AI 分析已选追踪记录和阶段变化…', 'aria-label': '追踪记录分析问题', maxLength: 12000, onChange: (event: any) => setQuestion(event.target.value), onKeyDown: (event: any) => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); void sendAnalysis('current'); } } }),
+      h('div', { className: 'ageval-composer-actions' },
+        h(Button, { quiet: true, disabled: !selectedIds.length, onClick: () => setSelectionOpen(true) }, `${selectedIds.length} 已选`),
+        h(ActionIcon, { glyph: SendIcon, label: sending ? '发送中…' : dict.send, disabled: sending || !selectedIds.length, onClick: () => void sendAnalysis('current') }),
+        h(ActionIcon, { glyph: PlusIcon, label: dict.newSession + '并分析', disabled: sending || !selectedIds.length, onClick: () => void sendAnalysis('new') }))),
+    deleteTarget ? h('div', { className: 'ageval-modal-backdrop', onClick: () => { if (!busy) setDeleteTarget(null); } },
+      h('div', { className: 'ageval-modal', role: 'dialog', 'aria-modal': true, 'aria-label': '删除这次采样记录', onClick: (event: any) => event.stopPropagation() },
+        h('div', { className: 'ageval-modal-head' }, h('h3', null, '删除这次采样记录')),
+        h('div', { className: 'ageval-delete-description' }, `删除「${deleteTarget.title}」中的「${deleteTarget.stage.label}」（${formatTimestamp(deleteTarget.stage.at)}）？只移除这一条采样，保留 suite 登记、其他阶段和实际实验文件。`),
+        h('div', { className: 'ageval-modal-foot' }, h(Button, { disabled: Boolean(busy), onClick: () => setDeleteTarget(null) }, '取消'),
+          h(Button, { disabled: Boolean(busy), onClick: async () => { if (await action('stage/remove', { id: deleteTarget.id, stageId: deleteTarget.stage.id })) setDeleteTarget(null); } }, busy ? '删除中…' : '确认删除')))) : null,
+    selectionOpen ? h('div', { className: 'ageval-modal-backdrop', onClick: () => setSelectionOpen(false) },
+      h('div', { className: 'ageval-modal', role: 'dialog', 'aria-modal': true, 'aria-label': '已选追踪记录', onClick: (event: any) => event.stopPropagation() },
+        h('div', { className: 'ageval-modal-head' }, h('h3', null, '已选追踪记录'), h(Button, { quiet: true, onClick: () => setSelectionOpen(false), label: '关闭' }, '×')),
+        h('div', { className: 'ageval-modal-list' }, selectedIds.map(id => {
+          const run = runs.find(item => item.id === id);
+          return h('div', { key: id, className: 'ageval-selected-row' }, h('div', { className: 'ageval-suite-main' }, h('div', null, run?.title || id), h('div', { className: 'ageval-subline' }, run ? sourceDisplay(run.source) : id)), h(Button, { quiet: true, disabled: sending, onClick: () => toggleAnalysis(id) }, '取消选择'));
+        })),
+        h('div', { className: 'ageval-modal-foot' }, h(Button, { quiet: true, disabled: sending, onClick: () => setSelectedIds([]) }, '清除选择'), h(Button, { onClick: () => setSelectionOpen(false) }, '完成')))) : null);
 }
 function App({ ctx, props }: { ctx: any; props: any }) {
   const [view, setView] = useState<'browse' | 'tracking'>('browse');
@@ -889,13 +975,13 @@ function App({ ctx, props }: { ctx: any; props: any }) {
   const groups = useMemo(() => Array.from(new Set(filtered.map(row => row.dataset))).sort().map(name => [name, sortSuites(filtered.filter(row => row.dataset === name), sort)] as [string, Row[]]), [filtered, sort]);
   const filtering = Boolean(query || bench !== 'all' || model !== 'all' || status !== 'all' || verdict !== 'all');
   if (view === 'tracking') return h('div', { className: 'ageval-viewer' },
-    h('div', { className: 'ageval-topbar' }, h('div', { className: 'ageval-heading' }, h('h2', null, 'ageval · 追踪中'), h('span', { className: 'ageval-meta' }, '只读实验数据'), h(Button, { quiet: true, onClick: () => setView('browse') }, '浏览结果'))),
-    h(TrackingPanel));
+    h('div', { className: 'ageval-topbar' }, h('div', { className: 'ageval-heading' }, h('h2', null, 'ageval · 追踪中'), h('span', { className: 'ageval-meta' }, '只读实验数据'), h(ActionIcon, { glyph: BrowseIcon, label: '浏览结果', onClick: () => setView('browse') }))),
+    h(TrackingPanel, { ctx, props }));
   if (attempt) return h(AttemptView, { attempt, onBack: () => { setAttempt(null); setError(''); } });
   if (detail) return h(DetailView, { data: detail, selected: Boolean(selected[detail.row.dataset + '/' + detail.row.suite]), error, busy: pending ? dict.loading : '', onBack: () => { setDetail(null); setError(''); }, onToggle: () => toggle(detail.row), onAttempt: openAttempt, onTiming: (task: Task, runId: string) => readJson(API + '/timing?dataset=' + encodeURIComponent(detail.row.dataset) + '&suite=' + encodeURIComponent(detail.row.suite) + '&task=' + encodeURIComponent(task.taskId) + '&run=' + encodeURIComponent(runId), undefined, scope) });
   return h('div', { className: 'ageval-viewer' },
     h('div', { className: 'ageval-topbar' },
-      h('div', { className: 'ageval-heading' }, h('h2', null, dict.title), h('span', { className: 'ageval-meta' }, (loading ? dict.loading + ' · ' : '') + dict.readOnly + ' · ' + filtered.length + '/' + rows.length), h(Button, { quiet: true, onClick: () => setView('tracking') }, '追踪中'), h(Button, { quiet: true, onClick: () => void load(), disabled: loading }, dict.refresh)),
+      h('div', { className: 'ageval-heading' }, h('h2', null, dict.title), h('span', { className: 'ageval-meta' }, (loading ? dict.loading + ' · ' : '') + dict.readOnly + ' · ' + filtered.length + '/' + rows.length), h(ActionIcon, { glyph: TimeIcon, label: '追踪中', onClick: () => setView('tracking') }), h(ActionIcon, { glyph: RefreshIcon, label: dict.refresh, onClick: () => void load(), disabled: loading })),
       h('div', { className: 'ageval-root-row' },
         h('button', { type: 'button', className: 'ageval-source-display', onClick: () => setSourceOpen(true), title: source ? sourceDisplay(source) : undefined },
           icon(source?.kind === 'ssh' ? 'terminal' : 'grid'), h('span', null, source ? sourceDisplay(source) : '选择数据源'), icon('chevron')),
@@ -915,9 +1001,9 @@ function App({ ctx, props }: { ctx: any; props: any }) {
       h('input', { className: 'ageval-control', value: question, placeholder: dict.question, onChange: (event: any) => setQuestion(event.target.value), onKeyDown: (event: any) => { if (event.key === 'Enter') { event.preventDefault(); void send('current'); } } }),
       h('div', { className: 'ageval-composer-actions' },
         h(Button, { quiet: true, onClick: () => setSelectionOpen(true), disabled: !Object.keys(selected).length }, Object.keys(selected).length + ' ' + dict.selected),
-        h(Button, { onClick: () => void registerSelected(), disabled: loading || !Object.keys(selected).length }, '登记追踪'),
-        h(Button, { onClick: () => void send('current'), disabled: loading }, dict.send),
-        h(Button, { onClick: () => void send('new'), disabled: loading }, dict.newSession))),
+        h(ActionIcon, { glyph: TimeIcon, label: '登记追踪', onClick: () => void registerSelected(), disabled: loading || !Object.keys(selected).length }),
+        h(ActionIcon, { glyph: SendIcon, label: dict.send, onClick: () => void send('current'), disabled: loading || !Object.keys(selected).length }),
+        h(ActionIcon, { glyph: PlusIcon, label: dict.newSession + '并分析', onClick: () => void send('new'), disabled: loading || !Object.keys(selected).length }))),
     sourceOpen ? h(SourcePicker, { source, recent, onChoose: chooseSource, onRemove: removeSavedSource, onClose: () => setSourceOpen(false) }) : null,
     selectionOpen ? h('div', { className: 'ageval-modal-backdrop', role: 'presentation', onClick: () => setSelectionOpen(false) }, h('div', { className: 'ageval-modal', role: 'dialog', 'aria-modal': true, onClick: (event: any) => event.stopPropagation() },
       h('div', { className: 'ageval-modal-head' }, h('h3', null, dict.selected + ' ' + dict.suites), h(Button, { quiet: true, onClick: () => setSelectionOpen(false), label: '关闭' }, '×')),
