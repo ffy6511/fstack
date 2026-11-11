@@ -1,87 +1,101 @@
-/**
- * Host half: one tiny route, `/dsh-panel-entry/ensure`.
- *
- * The Panel entry asks it for the note before opening the file address, so a
- * workspace without NOTES.md gets a skeleton instead of an empty editor. It
- * never overwrites an existing file: creation goes through `wx`, so a racing
- * create wins and we report what is actually on disk.
- */
-import { mkdir, writeFile } from 'node:fs/promises';
-import { dirname, isAbsolute, resolve, sep } from 'node:path';
+import { writeFile } from 'node:fs/promises';
+import { isAbsolute, join } from 'node:path';
+import { PanelError, panelStore } from './src/store.js';
 
 export const name = 'panel-entry';
-
-/**
- * cordis calls `apply` only after these services exist. Without the
- * declaration the callback ran too early, `ctx.webServer` was undefined, the
- * effect threw, and the route silently never mounted — the client then saw a
- * 404 from the host's own catch-all, not from this plugin.
- */
 export const inject = ['webServer'];
-
 const ROUTE = '/dsh-panel-entry';
-const DEFAULT_FILE = 'NOTES.md';
+const SKELETON = '# 面板笔记\n\n> agent 按 panel-note 规范往下追加，你在右栏直接改。\n';
 
-const SKELETON = `# 面板笔记
-
-> 这份文件由右栏的 Panel 入口打开：agent 按 panel-note 规范往下追加，你直接改。
-`;
-
-/** Answer one JSON envelope; the client only cares about `ok` and `message`. */
 function reply(res, status, body) {
-  res.statusCode = status;
-  res.setHeader('content-type', 'application/json; charset=utf-8');
+  res.writeHead(status, {
+    'content-type': 'application/json; charset=utf-8',
+    'cache-control': 'no-store',
+    'x-content-type-options': 'nosniff',
+  });
   res.end(JSON.stringify(body));
 }
 
-export function apply(ctx) {
-  const log = ctx.logger ?? console;
+async function bodyOf(req) {
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += Buffer.byteLength(chunk);
+    if (size > 128 * 1024) throw new PanelError('内容过长', 413);
+    chunks.push(Buffer.from(chunk));
+  }
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  } catch {
+    throw new PanelError('请求需要 JSON 内容');
+  }
+}
 
-  const handler = async (req, res) => {
-    const url = new URL(req.url ?? '/', 'http://localhost');
-    if (url.pathname.replace(/\/+$/, '') !== `${ROUTE}/ensure`) {
-      reply(res, 404, { ok: false, message: 'not found' });
-      return;
-    }
-
-    const cwd = url.searchParams.get('cwd') ?? '';
-    const rel = url.searchParams.get('path') ?? DEFAULT_FILE;
-    if (cwd === '' || !isAbsolute(cwd)) {
-      reply(res, 400, { ok: false, message: 'cwd 必须是绝对路径' });
-      return;
-    }
-    if (isAbsolute(rel) || rel.split(sep).includes('..')) {
-      reply(res, 400, { ok: false, message: 'path 必须是工作区内的相对路径' });
-      return;
-    }
-
-    const root = resolve(cwd);
-    const target = resolve(root, rel);
-    if (target !== root && !target.startsWith(root + sep)) {
-      reply(res, 400, { ok: false, message: 'path 落在工作区之外' });
-      return;
-    }
-
+function trusted(req) {
+  if (req.headers['sec-fetch-site'] === 'cross-site') return false;
+  if (req.headers.origin) {
+    let origin;
     try {
-      await mkdir(dirname(target), { recursive: true });
+      origin = new URL(req.headers.origin);
+    } catch {
+      return false;
+    }
+    if (origin.host !== req.headers.host) return false;
+  }
+  return (
+    req.method === 'GET' ||
+    (req.headers['content-type']?.split(';')[0] === 'application/json' &&
+      req.headers['x-panel-action'] === '1')
+  );
+}
+
+export function createHandler(store = panelStore(), log = console) {
+  return async (req, res) => {
+    try {
+      if (!trusted(req)) throw new PanelError('请从 DSH 面板操作', 403);
+      const url = new URL(req.url, 'http://localhost');
+      const route = url.pathname.replace(/\/+$/, '').slice(ROUTE.length);
+      if (!['/state', '/action', '/ensure'].includes(route)) throw new PanelError('Not found', 404);
+      const expected = route === '/state' ? 'GET' : 'POST';
+      if (req.method !== expected) {
+        res.setHeader('allow', expected);
+        throw new PanelError(`Use ${expected}`, 405);
+      }
+      const cwd = url.searchParams.get('cwd');
+      if (!cwd || !isAbsolute(cwd)) throw new PanelError('工作区目录需要是绝对路径');
+      if (route === '/state') return reply(res, 200, { ok: true, state: await store.read(cwd) });
+      if (route === '/action') {
+        const state = await store.act(cwd, await bodyOf(req));
+        return reply(res, 200, { ok: true, state });
+      }
+      const path = join(cwd, 'NOTES.md');
       let created = false;
       try {
-        await writeFile(target, SKELETON, { encoding: 'utf8', flag: 'wx' });
+        await writeFile(path, SKELETON, { encoding: 'utf8', flag: 'wx' });
         created = true;
-      } catch (cause) {
-        // EEXIST is the normal path: the note is already there (or a racing
-        // create won). Anything else is a real failure.
-        if (cause?.code !== 'EEXIST') throw cause;
+      } catch (error) {
+        if (error.code !== 'EEXIST') throw error;
       }
-      reply(res, 200, { ok: true, path: target, created });
-    } catch (cause) {
-      log.warn?.('panel-entry: ensure failed', cause);
-      reply(res, 500, { ok: false, message: String(cause?.message ?? cause) });
+      reply(res, 200, { ok: true, path, created });
+    } catch (error) {
+      const status = error.status ?? 500;
+      if (status === 500) log.warn?.('panel-entry:', error);
+      reply(res, status, {
+        ok: false,
+        message: status === 500 ? '读写面板失败，请检查目录权限与 DSH 日志' : error.message,
+      });
     }
   };
+}
 
+export function apply(ctx) {
   ctx.effect(
-    () => ctx.webServer.register({ kind: 'prefix', path: ROUTE, handler }),
+    () =>
+      ctx.webServer.register({
+        kind: 'prefix',
+        path: ROUTE,
+        handler: createHandler(panelStore(), ctx.logger ?? console),
+      }),
     'panel-entry: routes',
   );
 }
