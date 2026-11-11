@@ -3,3 +3,4 @@ node_modules/
 __pycache__/
 # Per-skill local config (keep preferences.example.toml tracked)
 **/preferences.toml
+.private/
