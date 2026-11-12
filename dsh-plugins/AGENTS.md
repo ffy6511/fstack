@@ -48,7 +48,21 @@ DSH 本地插件的开发约定。仓库整体规则见根 `AGENTS.md`；这里�
 
 - 有构建的包跑 `npm test`，它先 `scripts/build.mjs` 再 `node --test test/*.test.mjs`。
 - 提交前跑仓库根的 `npx prettier --check .`。
-- 装进 profile 后，host 半改动重启 DSH 生效；客户端 bundle 只在启动时加载，页面刷新不够。
+- 装进 profile 后，host 半改动重启 DSH 生效。客户端 bundle 由宿主按包热重载，见下一节。
+
+
+## 单独重载一个插件的客户端
+
+宿主进程里的 `client-hmr` 每 500ms 轮询客户端图里每个包的 `client.js`。比较的是这一个文件的 `mtimeMs`、`ctimeMs` 和 `size`。三项都没变就跳过；有一项变了，只对这个包调用 `clientModules.rebuilt(包名)`。新版本号由这三项算出来，然后 `/plugins/events` 推一条 `{ "type": "rebuilt", "id": "<包名>", "rev": "<版本>" }`。浏览器收到后重新取客户端图，组合地址里只这个包的 `rev` 变，其它包保持原值。
+
+桌面版和 `dsh web` 都走这条通道。profile 必须用 `link:` 指到源码目录，轮询读到的才是刚构建的文件。
+
+1. 在包目录跑 `npm test` 或 `npm run build`，让 `scripts/build.mjs` 重写本包 `client.js`。
+2. 构建没改文件时间时，单独拨这个文件的 mtime：`touch client.js`。不要拨别的包。
+3. 等一轮轮询。核对方法：带当前页面的会话 cookie 请求 `http://127.0.0.1:<端口>/`，在 HTML 里找 `plugins/??...@fstack/dsh-<短名>/client.js...&rev=`。`rev` 变了，再请求这条组合地址，确认新代码在返回体里。
+4. 刷新当前 DSH 页面。已打开的页面不会在原地替换正在运行的模块。
+
+这条路径只更新客户端 bundle。`index.js`、`cordis.patch.yml`、新增或删除插件、改 `inject`，仍然要完全退出并重开 DSH。
 
 ## 自查与验收
 
