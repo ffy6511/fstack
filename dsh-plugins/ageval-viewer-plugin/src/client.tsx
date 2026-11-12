@@ -36,7 +36,7 @@ const zh = {
   selected: '已选', send: '发给当前 session', newSession: '新建 session', question: '让 agent 分析已选结果…',
   failed: '请求失败', sent: '已发送', currentUnavailable: '当前 session 不可用',
   readOnly: '只读', allBenches: '全部 bench', allModels: '全部 model', allStatuses: '全部状态', allVerdicts: '全部结果',
-  clean: '完场, E=0', hasErrors: '有 ERROR', clear: '清除', addContext: '加入分析', suites: 'suites', tasksCount: 'tasks',
+  clean: '完场, E=0', hasErrors: '有 ERROR', clear: '清除', addContext: '加入分析', suites: 'suites',
   passRate: '通过率', changeRoot: '更改', collapseRoot: '收起', files: '文件', noSteps: '这条 run 没有 trajectory.jsonl',
   noTasks: '没有匹配的 task', observational: '轨迹只记录过程，PASS 由独立评测给出。', fork: '以上继承自父 attempt',
   expandAll: '展开', collapseAll: '收起', copy: '复制', copied: '已复制', truncated: '已截断',
@@ -56,6 +56,9 @@ const ICONS: Record<string, [string, Record<string, string>][]> = {
   search: [['circle', { cx: '11', cy: '11', r: '7' }], ['path', { d: 'm20 20-3.5-3.5' }]],
   pen: [['path', { d: 'M12 20h9' }], ['path', { d: 'M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z' }]],
   chevron: [['path', { d: 'm6 9 6 6 6-6' }]],
+  arrowUp: [['path', { d: 'M12 19V5' }], ['path', { d: 'm5 12 7-7 7 7' }]],
+  arrowDown: [['path', { d: 'M12 5v14' }], ['path', { d: 'm19 12-7 7-7-7' }]],
+  sortArrows: [['path', { d: 'm8 9 4-4 4 4' }], ['path', { d: 'm8 15 4 4 4-4' }]],
   copy: [['rect', { x: '9', y: '9', width: '13', height: '13', rx: '2' }], ['path', { d: 'M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1' }]],
   check: [['path', { d: 'M20 6 9 17l-5-5' }]],
 };
@@ -439,14 +442,25 @@ function DetailView({ data, selected, error, busy, onBack, onToggle, onAttempt, 
         ids.length > 1 ? h(Select, { className: 'ageval-attempt-select', value: runId, aria: 'Attempt', onChange: (value: string) => setRuns(prev => ({ ...prev, [task.taskId]: value })), options: ids.map(id => [id, id] as [string, string]) }) : null);
     }) : h('div', { className: 'ageval-empty' }, dict.noTasks)));
 }
-function SuiteList({ rows, bench, selected, onToggle, onOpen }: { rows: Row[]; bench: string; selected: Record<string, Row>; onToggle: (row: Row) => void; onOpen: (row: Row) => void }) {
+function SuiteList({ rows, bench, selected, onToggle, onOpen, sort, onSort }: { rows: Row[]; bench: string; selected: Record<string, Row>; onToggle: (row: Row) => void; onOpen: (row: Row) => void; sort: string; onSort: (order: string) => void }) {
+  const sortBtn = (column: string, ascFirst: boolean, label: string) => {
+    const active = sort.startsWith(column + '-');
+    const asc = active ? sort.endsWith('-asc') : ascFirst;
+    return h('button', {
+      type: 'button',
+      className: 'ageval-sort-btn' + (active ? ' is-on' : ''),
+      title: '按' + label + '排序，再点切换方向',
+      'aria-label': '按' + label + '排序' + (active ? '，当前' + (asc ? '升序' : '降序') : ''),
+      onClick: () => onSort(column + '-' + (active ? (asc ? 'desc' : 'asc') : ascFirst ? 'asc' : 'desc')),
+    }, icon(active ? (asc ? 'arrowUp' : 'arrowDown') : 'sortArrows'));
+  };
   return h('tbody', { className: 'ageval-suite-group', 'aria-label': bench },
     h('tr', { className: 'ageval-suite-group-row' },
       h('th', { className: 'ageval-table-bench-mark', 'aria-label': 'Bench 分组' }, h(BenchIcon, { className: 'ageval-bench-icon', width: 16, height: 16, 'aria-hidden': true })),
-      h('th', { scope: 'rowgroup', className: 'ageval-table-identity' }, bench),
-      h('th', { scope: 'col', className: 'ageval-table-rate' }, h('span', { className: 'ageval-column-title' }, h(RateIcon, { width: 14, height: 14, 'aria-hidden': true }), '通过率')),
+      h('th', { scope: 'rowgroup', className: 'ageval-table-identity' }, bench, sortBtn('name', true, 'Suite 名称')),
+      h('th', { scope: 'col', className: 'ageval-table-rate' }, h('span', { className: 'ageval-column-title' }, h(RateIcon, { width: 14, height: 14, 'aria-hidden': true }), '通过率', sortBtn('rate', false, '通过率'))),
       h('th', { scope: 'col', className: 'ageval-table-counts' }, h('span', { className: 'ageval-column-title' }, h(CountsIcon, { width: 14, height: 14, 'aria-hidden': true }), 'P / F / E')),
-      h('th', { scope: 'col', className: 'ageval-table-time' }, h('span', { className: 'ageval-column-title' }, h(TimeIcon, { width: 14, height: 14, 'aria-hidden': true }), '创建时间'))),
+      h('th', { scope: 'col', className: 'ageval-table-time' }, h('span', { className: 'ageval-column-title' }, h(TimeIcon, { width: 14, height: 14, 'aria-hidden': true }), '创建时间', sortBtn('time', false, '创建时间')))),
     ...rows.map(row => {
       const key = row.dataset + '/' + row.suite;
       return h('tr', {
@@ -462,10 +476,10 @@ function SuiteList({ rows, bench, selected, onToggle, onOpen }: { rows: Row[]; b
         h('td', { className: 'ageval-table-time' }, h('time', { dateTime: row.createdAt || undefined, title: row.createdAt || '时间未记录' }, formatTimestamp(row.createdAt))));
     }));
 }
-export function SuiteTable({ groups, root, selected, onToggle, onOpen }: { groups: [string, Row[]][]; root: string; selected: Record<string, Row>; onToggle: (row: Row) => void; onOpen: (row: Row) => void }) {
+export function SuiteTable({ groups, root, selected, onToggle, onOpen, sort, onSort }: { groups: [string, Row[]][]; root: string; selected: Record<string, Row>; onToggle: (row: Row) => void; onOpen: (row: Row) => void; sort: string; onSort: (order: string) => void }) {
   return h('table', { className: 'ageval-suite-table', 'aria-label': 'Suite runs，按 bench 分组' },
     h('colgroup', null, h('col', { className: 'ageval-col-check' }), h('col', { className: 'ageval-col-identity' }), h('col', { className: 'ageval-col-rate' }), h('col', { className: 'ageval-col-counts' }), h('col', { className: 'ageval-col-time' })),
-    ...groups.map(([name, rows]) => h(SuiteList, { key: name, rows, bench: benchLabel(name, root), selected, onToggle, onOpen })));
+    ...groups.map(([name, rows]) => h(SuiteList, { key: name, rows, bench: benchLabel(name, root), selected, onToggle, onOpen, sort, onSort })));
 }
 function sourceDisplay(source: DataSource): string {
   return source.kind === 'github' ? `${source.repo}@${source.ref || 'HEAD'} · ${source.path || '/'}` : source.kind === 'ssh' ? `${source.host} · ${source.path}` : source.path;
@@ -993,9 +1007,7 @@ function App({ ctx, props }: { ctx: any; props: any }) {
         h('div', { className: 'ageval-filter-select' }, h(Select, { value: status, onChange: setStatus, aria: 'Status', options: [['all', dict.allStatuses], ...Array.from(new Set(rows.map(item => item.status))).sort().map(item => [item, item] as [string, string])] })),
         h('div', { className: 'ageval-filter-select' }, h(Select, { value: verdict, onChange: setVerdict, aria: 'Result', options: [['all', dict.allVerdicts], ['clean', dict.clean], ['error', dict.hasErrors]] })),
         filtering ? h(Button, { quiet: true, onClick: () => { setQuery(''); setBench('all'); setModel('all'); setStatus('all'); setVerdict('all'); } }, dict.clear) : null)),
-    h('div', { className: 'ageval-summary' }, h('strong', null, filtered.length + ' ' + dict.suites), h('span', null, filtered.reduce((sum, row) => sum + (row.expected || 0), 0) + ' ' + dict.tasksCount),
-      h(Select, { className: 'ageval-sort-select', value: sort, onChange: setSort, aria: 'Suite 排序（各 bench 内）', options: [['time-desc', '创建时间 · 最新在前'], ['time-asc', '创建时间 · 最早在前'], ['rate-desc', '通过率 · 从高到低'], ['rate-asc', '通过率 · 从低到高'], ['name-asc', 'Suite 名称 · 升序']] })),
-    !root ? h('div', { className: 'ageval-empty' }, dict.noRoot) : h('div', { className: 'ageval-scroll' }, loading && !rows.length ? h('div', { className: 'ageval-empty' }, dict.loading) : groups.length ? h(SuiteTable, { groups, root, selected, onToggle: toggle, onOpen: open }) : h('div', { className: 'ageval-empty' }, dict.empty)),
+    !root ? h('div', { className: 'ageval-empty' }, dict.noRoot) : h('div', { className: 'ageval-scroll' }, loading && !rows.length ? h('div', { className: 'ageval-empty' }, dict.loading) : groups.length ? h(SuiteTable, { groups, root, selected, onToggle: toggle, onOpen: open, sort, onSort: setSort }) : h('div', { className: 'ageval-empty' }, dict.empty)),
     h(Banner, { error, message }),
     h('div', { className: 'ageval-composer' },
       h('input', { className: 'ageval-control', value: question, placeholder: dict.question, onChange: (event: any) => setQuestion(event.target.value), onKeyDown: (event: any) => { if (event.key === 'Enter') { event.preventDefault(); void send('current'); } } }),

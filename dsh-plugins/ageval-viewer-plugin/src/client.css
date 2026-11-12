@@ -758,21 +758,6 @@ body {
   flex: 0 0 auto;
   width: 128px;
 }
-.ageval-summary {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 22px;
-  padding: 0 var(--ageval-inset);
-  color: var(--ageval-text-secondary);
-  font-family: var(--dsw-font-family);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-.ageval-summary strong {
-  color: var(--ageval-text);
-  font-weight: 500;
-}
 .ageval-scroll,
 .ageval-detail-scroll {
   min-height: 0;
@@ -851,6 +836,38 @@ body {
   flex: 0 0 14px;
   width: 14px;
   height: 14px;
+}
+.ageval-sort-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-left: 2px;
+  padding: 0;
+  color: var(--ageval-text-secondary);
+  background: none;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.ageval-suite-group-row th:hover .ageval-sort-btn,
+.ageval-sort-btn:focus-visible,
+.ageval-sort-btn.is-on {
+  opacity: 1;
+}
+.ageval-sort-btn.is-on {
+  color: var(--ageval-text);
+}
+.ageval-sort-btn:hover {
+  background: var(--ageval-hover);
+}
+.ageval-sort-btn:focus-visible {
+  outline: var(--dsw-focus-ring-width, 2px) solid
+    var(--dsw-focus-ring-color, var(--ageval-text-secondary));
+  outline-offset: 1px;
 }
 .ageval-bench-icon {
   display: block;
@@ -1790,15 +1807,6 @@ body {
   color: var(--ageval-text-secondary);
   font: 11px/18px var(--dsw-font-family);
 }
-.ageval-summary {
-  gap: 10px;
-  flex-wrap: wrap;
-  padding-block: 5px;
-}
-.ageval-sort-select {
-  width: 180px;
-  margin-left: auto;
-}
 .ageval-source-display,
 .ageval-chip,
 .ageval-tab,
@@ -1806,5 +1814,4 @@ body {
 .ageval-suite {
   color: var(--ageval-text);
   font-family: var(--dsw-font-family);
-}
 }

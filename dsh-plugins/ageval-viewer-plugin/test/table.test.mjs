@@ -14,8 +14,8 @@ test('suite table shares columns across benches and preserves selection and row 
   vm.runInNewContext(source.replace('return module.exports.default ?? module.exports;', 'return module.exports;'), { window, console });
   const first = { dataset: 'a', suite: 'long-suite-name', model: 'model', pass: 1, fail: 2, error: 3, passRate: .1, createdAt: '2026-01-01T00:00:00Z' };
   const second = { ...first, dataset: 'b', suite: 's', createdAt: null };
-  let opened, toggled;
-  const table = plugin.SuiteTable({ groups: [['a', [first]], ['b', [second]]], root: '/root', selected: {}, onOpen: row => { opened = row; }, onToggle: row => { toggled = row; } });
+  let opened, toggled, sorted;
+  const table = plugin.SuiteTable({ groups: [['a', [first]], ['b', [second]]], root: '/root', selected: {}, onOpen: row => { opened = row; }, onToggle: row => { toggled = row; }, sort: 'time-desc', onSort: order => { sorted = order; } });
   assert.equal(table.type, 'table'); assert.equal(table.children[0].type, 'colgroup'); assert.equal(table.children[0].children.length, 5);
   const sections = table.children.filter(node => node.type === 'tbody'); assert.equal(sections.length, 2);
   const header = sections[0].children[0];
@@ -33,6 +33,17 @@ test('suite table shares columns across benches and preserves selection and row 
     assert.equal(title.children[0].props.width, 14);
     assert.equal(title.children[1], label);
   }
+  assert.equal(header.children[3].children[0].children.length, 2);
+  const nameBtn = header.children[1].children[1];
+  assert.equal(nameBtn.type, 'button');
+  assert.ok(!nameBtn.props.className.includes('is-on'));
+  nameBtn.props.onClick(); assert.equal(sorted, 'name-asc');
+  const rateBtn = header.children[2].children[0].children[2];
+  assert.equal(rateBtn.type, 'button');
+  rateBtn.props.onClick(); assert.equal(sorted, 'rate-desc');
+  const timeBtn = header.children[4].children[0].children[2];
+  assert.equal(timeBtn.props.className.includes('is-on'), true);
+  timeBtn.props.onClick(); assert.equal(sorted, 'time-asc');
   assert.equal(sections[1].children[0].children[1].children[0], 'b');
   assert.ok(!JSON.stringify(table).includes(' suites'));
   assert.ok(!JSON.stringify(table).includes('Suite / Model'));
