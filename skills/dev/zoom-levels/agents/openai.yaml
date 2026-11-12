@@ -1,0 +1,6 @@
+interface:
+  display_name: 'zoom levels'
+  short_description: '先把结论写成一段总述，再分点展开，每个分点首句自带信息'
+  default_prompt: 'Use $zoom-levels to rewrite this answer with layered points.'
+policy:
+  allow_implicit_invocation: false
