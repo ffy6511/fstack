@@ -2,13 +2,25 @@
 name: resync-local-main
 description: >-
   本地分支有未推送的提交、远端同一分支又出现了新提交时，先备份并暂存本地改动，拉取远端，
-  再把本地提交重放到远端之上，最后校验内容没变、恢复工作区。默认不 push。
+  再以远端最新提交为底座重放本地提交，最后逐提交校验内容没变、恢复工作区。默认不 push。
   用户说「远端 main 有新提交」「先 stash 再 pull 再重放」「本地落后了」时使用。
 ---
 
 # resync-local-main
 
 用在一种具体局面：本地 `main`（或任意跟踪分支）有几个没推的提交，远端同一分支又前进了。要的结果是本地提交原样保留、排到远端最新提交之后，也就是 rebase 一遍。
+
+**默认语义：先拉取远端，再以远端最新提交为底座，把本地未推送提交逐笔重放上去。** 最终历史是「远端更新 → 本地提交」；本地已有提交不会被远端版本替换，也不通过 merge 把远端历史并进来。
+
+## 先在正确的工作树里执行
+
+`main` 可能检出在另一个 worktree。先运行：
+
+```bash
+git worktree list --porcelain
+```
+
+要 resync `main` 时，进入检出 `main` 的目录执行；不要在功能分支的 worktree 里把当前分支当成 `main`。用户只说要更新某个功能分支时，才在当前 worktree 对该分支执行。
 
 ## 什么时候不该用
 
@@ -29,8 +41,8 @@ scripts/resync.sh --dry-run        # 只看计划，不动 git
 1. 把当前 HEAD 记到 `refs/backups/resync-<时间>`。
 2. 工作区有改动就先 `git stash push`（加 `-u` 连未跟踪文件一起收）。
 3. `git fetch <remote> --prune`。
-4. 已经包含远端就结束；否则 `git rebase <base>`。
-5. 重放后比对内容：`git diff <备份> HEAD`，不一致就逐个文件列出来。
+4. 已经包含远端就结束；否则把本地未推送提交 `git rebase` 到最新远端提交之上。
+5. 重放后逐个提交比较 patch-id，确认提交集合和内容没有变化。
 6. `git stash pop` 把工作区还回去。
 
 ## 冲突时
@@ -53,7 +65,8 @@ git stash list
 ## 验收
 
 - `git log --oneline <base>..HEAD` 的提交集合和重放前一致，顺序变了、内容没变。
-- `git diff <备份> HEAD` 为空。
+- 重放前后的每一笔本地提交 patch-id 一致。不要用 `git diff <备份> HEAD` 判断：远端新增了别处的修改时，这份 diff 本来就不会为空。
+- `HEAD..<base>` 为空，也就是最新远端已经是本地 HEAD 的祖先。
 - 工作区回到重放前的样子，stash 已 pop。
 - 没有 push。
 

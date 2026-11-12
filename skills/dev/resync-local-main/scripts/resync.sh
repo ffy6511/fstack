@@ -111,15 +111,25 @@ if [ "${stashed}" = 1 ]; then
   }
 fi
 
-# 重放是否保住了本地提交的改动：比较「本地相对旧基线的 diff」和「本地相对新基线的 diff」
-patch_id() { git diff "$1" "$2" | git patch-id --stable | awk '{print $1}'; }
-old_patch=$(patch_id "${old_base}" "${backup}")
-new_patch=$(patch_id "${new_base}" HEAD)
-if [ "${old_patch}" = "${new_patch}" ]; then
+# 逐提交比较 patch-id。比较整段 diff 会被远端新增的无关文件干扰。
+commit_patch_ids() {
+  git rev-list --reverse "$1".."$2" |
+    while IFS= read -r commit; do
+      git show --pretty=format: "${commit}" |
+        git patch-id --stable |
+        awk '{print $1}'
+    done
+}
+old_patches=$(commit_patch_ids "${old_base}" "${backup}")
+new_patches=$(commit_patch_ids "${new_base}" HEAD)
+if [ "${old_patches}" = "${new_patches}" ]; then
   echo "校验通过：本地提交的改动和重放前一致"
 else
-  echo "本地提交的改动和重放前不一致，逐个文件核对：" >&2
-  git diff --stat "${backup}" HEAD >&2
+  echo "本地提交重放前后的 patch-id 不一致：" >&2
+  echo "重放前：" >&2
+  printf '%s\n' "${old_patches}" >&2
+  echo "重放后：" >&2
+  printf '%s\n' "${new_patches}" >&2
   exit 5
 fi
 
