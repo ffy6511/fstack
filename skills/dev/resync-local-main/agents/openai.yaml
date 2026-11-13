@@ -1,4 +1,4 @@
 interface:
   display_name: "resync local main"
-  short_description: "把本地未推送的提交重放到远端最新提交之上，带备份与校验"
-  default_prompt: "Use $resync-local-main in the worktree that has main checked out: fetch origin, then replay my unpushed main commits on top of origin/main. Resolve conflicts if needed and do not push."
+  short_description: "重放分支和本地 main 的提交，并把分支未提交改动迁到 main；默认不 push"
+  default_prompt: "Use $resync-local-main. First determine the direction: when I say to resync branch A onto local main, fetch origin/main, replay main's local unpushed commits, replay A's local commits onto the updated main, then move A's uncommitted and untracked changes into the main worktree and leave A clean. Verify both commit ranges by patch-id, including the explicit zero-commit case. When I say to resync the current branch, rebase it onto its own upstream the same way. Back up before rewriting, resolve conflicts only when I confirm, and do not push."
