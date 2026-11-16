@@ -16,6 +16,7 @@ export function timingOf(value = {}) {
 export function sortSuites(rows, order = 'time-desc') {
   const descending = order.endsWith('-desc');
   const value = row => order.startsWith('rate-') ? (typeof row.passRate === 'number' && Number.isFinite(row.passRate) ? row.passRate : null)
+    : order.startsWith('updated-') ? (timestamp(row.updatedAt) ? Date.parse(row.updatedAt) : null)
     : order.startsWith('time-') ? (timestamp(row.createdAt) ? Date.parse(row.createdAt) : null) : row.suite;
   return [...rows].sort((a, b) => {
     const x = value(a), y = value(b);

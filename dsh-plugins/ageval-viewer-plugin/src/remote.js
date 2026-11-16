@@ -75,7 +75,7 @@ export async function remoteRead(host, request, { signal, timeout = 30000 } = {}
   program ??= await readFile(new URL('./remote-reader.py', import.meta.url), 'utf8');
   const encoded = Buffer.from(JSON.stringify(request)).toString('base64');
   // Source code comes from this package on stdin. Paths are data in one base64
-  // argument, never shell fragments. No deployment or remote file writes.
+  // argument, never shell fragments. No deployment; confirmed removal only moves suite directories.
   const command = `python3 - ${quote(encoded)}`;
   return new Promise((resolvePromise, reject) => {
     const child = spawn('/usr/bin/ssh', ['-T', '-o', 'BatchMode=yes', '-o', 'ControlPath=none', '-o', 'ConnectTimeout=10', '-o', 'StrictHostKeyChecking=yes', '-o', 'PermitLocalCommand=no', '-o', 'ClearAllForwardings=yes', host, command], { stdio: ['pipe', 'pipe', 'pipe'], signal });
@@ -102,13 +102,16 @@ export async function sshList(host, path) { return remoteRead(host, { op: 'list_
 export async function remoteResolve(source) { const result = await remoteRead(source.host, { op: 'resolve', path: source.path }); return { kind: 'ssh', host: source.host, path: result.path }; }
 export async function remoteSuites(source) {
   const result = await remoteRead(source.host, { op: 'suites', path: source.path });
-  return { rows: result.documents.map(d => rowOf(d.dataset, d.suite, d.summary, d.progress)), warnings: result.warnings };
+  return { rows: result.documents.map(d => remoteUpdated(rowOf(d.dataset, d.suite, d.summary, d.progress), d.modifiedAt)), warnings: result.warnings };
 }
 export async function remoteSuite(source, dataset, suite) {
   if (dataset !== '.') segment(dataset); segment(suite);
   const d = await remoteRead(source.host, { op: 'suite', path: source.path, dataset, suite });
-  return detailOf(dataset, suite, d.summary, d.progress);
+  const detail = detailOf(dataset, suite, d.summary, d.progress);
+  detail.row = remoteUpdated(detail.row, d.modifiedAt);
+  return detail;
 }
+function remoteUpdated(row, modifiedAt) { return { ...row, updatedAt: row.updatedAt || modifiedAt, updatedAtSource: row.updatedAtSource || (modifiedAt ? 'evidence-mtime' : null) }; }
 export async function remoteAttempt(source, dataset, suite, task, run) {
   if (dataset !== '.') segment(dataset); segment(suite); segment(task); if (run) segment(run);
   return remoteRead(source.host, { op: 'attempt', path: source.path, dataset, suite, task, run }, { timeout: 60000 });

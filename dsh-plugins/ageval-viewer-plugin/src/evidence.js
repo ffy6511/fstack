@@ -1,4 +1,5 @@
 import { timingOf, timestamp } from './display.js';
+import { timingRequests, collectTimings } from './timing-batch.js';
 import { open, readdir, realpath, stat } from 'node:fs/promises';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 
@@ -67,7 +68,7 @@ export function rowOf(dataset, suite, summary, progress) {
     pass, fail, error, skipped, observed, expected, finished,
     passRate: expected > 0 && pass !== null ? pass / expected : null,
     clean: Boolean(summary && status === 'complete' && error === 0 && expected > 0 && finished === expected),
-    createdAt: timestamp(source.created_at), ...timingOf(source), hasSummary: summary !== null,
+    createdAt: timestamp(source.created_at), updatedAt: timestamp(source.updated_at) || timestamp(source.finished_at), updatedAtSource: timestamp(source.updated_at) ? 'updated_at' : timestamp(source.finished_at) ? 'finished_at' : null, ...timingOf(source), hasSummary: summary !== null,
     summaryPath: `${dataset}/.ageval/suite-runs/${suite}/summary.json`,
     warnings: [...(!summary ? ['No summary: not a completed result'] : []), ...(observed !== null && expected !== null && observed !== expected ? ['Counts do not match expected task count'] : []), ...(status === 'running' ? ['Recorded status only; process liveness is not verified'] : [])],
   };
@@ -94,13 +95,25 @@ async function datasetPath(root, key) {
   if (key === '.') return root;
   return within(root, resolve(root, segment(key)));
 }
-async function documents(root, dataset, suite) {
+async function documents(root, dataset, suite, includeFileTime = true) {
   const base = await datasetPath(root, dataset);
   const dir = await within(root, resolve(base, '.ageval', 'suite-runs', segment(suite)));
   const summary = await optionalJson(root, resolve(dir, 'summary.json'));
   const progress = summary ? null : await optionalJson(root, resolve(dir, 'progress.json'));
-  return { base, summary, progress };
+  const declared = rowOf(dataset, suite, summary, progress).updatedAt;
+  return { base, summary, progress, modifiedAt: includeFileTime && !declared ? await suiteFileTime(root, dataset, suite) : null };
 }
+export async function suiteFileTime(root, dataset, suite) {
+  const base = await datasetPath(root, dataset);
+  const dir = await within(root, resolve(base, '.ageval', 'suite-runs', segment(suite)));
+  const times = await Promise.all(['summary.json', 'progress.json'].map(async name => {
+    try { const info = await stat(await within(root, resolve(dir, name))); return info.isFile() ? info.mtimeMs : null; }
+    catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+  }));
+  const known = times.filter(value => value != null);
+  return known.length ? new Date(Math.max(...known)).toISOString() : null;
+}
+function withUpdated(row, modifiedAt) { return { ...row, updatedAt: row.updatedAt || modifiedAt, updatedAtSource: row.updatedAtSource || (modifiedAt ? 'evidence-mtime' : null) }; }
 export async function listSuites(root) {
   const rows = [], warnings = [];
   const groups = await datasets(root);
@@ -109,8 +122,8 @@ export async function listSuites(root) {
       if (!entry.isDirectory()) continue;
       if (rows.length >= 2000) { warnings.push('Suite list capped at 2000'); return { rows, warnings }; }
       try {
-        const { summary, progress } = await documents(root, group.key, entry.name);
-        rows.push(rowOf(group.key, entry.name, summary, progress));
+        const { summary, progress, modifiedAt } = await documents(root, group.key, entry.name, false);
+        rows.push(withUpdated(rowOf(group.key, entry.name, summary, progress), modifiedAt));
       } catch (error) {
         warnings.push(`${group.key}/${entry.name}: ${error.message}`);
       }
@@ -119,8 +132,10 @@ export async function listSuites(root) {
   return { rows, warnings };
 }
 export async function suiteDetail(root, dataset, suite) {
-  const { summary, progress } = await documents(root, dataset, suite);
-  return detailOf(dataset, suite, summary, progress);
+  const { summary, progress, modifiedAt } = await documents(root, dataset, suite);
+  const detail = detailOf(dataset, suite, summary, progress);
+  detail.row = withUpdated(detail.row, modifiedAt);
+  return detail;
 }
 export function detailOf(dataset, suite, summary, progress) {
   const source = summary ?? progress ?? {};
@@ -136,8 +151,11 @@ export function detailOf(dataset, suite, summary, progress) {
   return { row: rowOf(dataset, suite, summary, progress), tasks, errors, actors: (source.actors_summary ?? []).map(a => ({ role: a.profile_id, model: a.model, executor: a.executor })) };
 }
 export async function taskTiming(root, dataset, suite, taskId, requestedRun) {
-  segment(taskId);
   const detail = await suiteDetail(root, dataset, suite);
+  return timingFromDetail(root, dataset, detail, taskId, requestedRun);
+}
+async function timingFromDetail(root, dataset, detail, taskId, requestedRun) {
+  segment(taskId);
   const task = detail.tasks.find(t => t.taskId === taskId);
   const runId = requestedRun || task?.runId; segment(runId);
   if (!task?.runIds.includes(runId)) throw new EvidenceError('Attempt does not belong to selected task', 403);
@@ -146,7 +164,11 @@ export async function taskTiming(root, dataset, suite, taskId, requestedRun) {
     try { const summary = await optionalJson(root, resolve(dir, 'summary.json')); if (summary) return { ...timingOf(summary), runId }; }
     catch (e) { if (e.code !== 'ENOENT') throw e; }
   }
-  return { ...timingOf(), runId };
+  throw new EvidenceError('Attempt summary is unavailable on this source', 404);
+}
+export async function taskTimings(root, dataset, suite, input) {
+  const items = timingRequests(input), detail = await suiteDetail(root, dataset, suite);
+  return collectTimings(items, item => timingFromDetail(root, dataset, detail, item.task, item.run));
 }
 export async function attemptDetail(root, dataset, suite, taskId, requestedRun) {
   segment(taskId);

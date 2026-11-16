@@ -16,10 +16,10 @@ test('suite table shares columns across benches and preserves selection and row 
   const second = { ...first, dataset: 'b', suite: 's', createdAt: null };
   let opened, toggled, sorted;
   const table = plugin.SuiteTable({ groups: [['a', [first]], ['b', [second]]], root: '/root', selected: {}, onOpen: row => { opened = row; }, onToggle: row => { toggled = row; }, sort: 'time-desc', onSort: order => { sorted = order; } });
-  assert.equal(table.type, 'table'); assert.equal(table.children[0].type, 'colgroup'); assert.equal(table.children[0].children.length, 5);
+  assert.equal(table.type, 'table'); assert.equal(table.children[0].type, 'colgroup'); assert.equal(table.children[0].children.length, 6);
   const sections = table.children.filter(node => node.type === 'tbody'); assert.equal(sections.length, 2);
   const header = sections[0].children[0];
-  assert.equal(header.children.length, 5);
+  assert.equal(header.children.length, 6);
   assert.equal(header.children[0].props.className, 'ageval-table-bench-mark');
   assert.equal(header.children[0].children[0].type, 'svg');
   assert.equal(header.children[0].children[0].props.width, 16);
@@ -27,7 +27,7 @@ test('suite table shares columns across benches and preserves selection and row 
   assert.notEqual(header.children[3].children[0].children[0].props['data-icon'], 'folder');
   assert.equal(sections[1].children[0].children[0].children[0].type, 'svg');
   assert.equal(header.children[1].children[0], 'a');
-  for (const [index, label] of [[2, '通过率'], [3, 'P / F / E'], [4, '创建时间']]) {
+  for (const [index, label] of [[2, '通过率'], [3, 'P / F / E'], [4, '创建时间'], [5, '更新时间']]) {
     const title = header.children[index].children[0];
     assert.equal(title.children[0].type, 'svg');
     assert.equal(title.children[0].props.width, 14);
@@ -47,13 +47,15 @@ test('suite table shares columns across benches and preserves selection and row 
   assert.equal(sections[1].children[0].children[1].children[0], 'b');
   assert.ok(!JSON.stringify(table).includes(' suites'));
   assert.ok(!JSON.stringify(table).includes('Suite / Model'));
-  const row = sections[0].children[1]; assert.equal(row.children.length, 5);
+  const row = sections[0].children[1]; assert.equal(row.children.length, 6);
   assert.equal(row.children[2].props.className, 'ageval-table-rate');
   assert.equal(row.children[3].props.className, 'ageval-table-counts');
   assert.equal(row.children[3].children[0].children[0], '1 / 2 / 3');
   assert.equal(row.children[3].children[0].props['aria-label'], 'P 1  F 2  E 3');
   assert.equal(row.children[4].props.className, 'ageval-table-time');
   assert.equal(row.children[4].children[0].props.dateTime, first.createdAt);
+  assert.equal(row.children[5].children[0].children[0], '更新时间未记录');
+  header.children[5].children[0].children[2].props.onClick(); assert.equal(sorted, 'updated-desc');
   const identity = row.children[1]; assert.ok(!JSON.stringify(identity).includes(first.createdAt));
   row.props.onClick({ target: { closest: () => null } }); assert.equal(opened, first);
   opened = null; row.props.onClick({ target: { closest: () => ({}) } }); assert.equal(opened, null);

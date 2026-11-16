@@ -3,8 +3,11 @@ import json
 import os
 import stat
 import sys
+import hashlib
+import uuid
+from datetime import datetime, timezone
 
-# A fixed read-only protocol. No path or operation is evaluated as code.
+# Fixed operations only. Removal moves confirmed suite directories, never attempts.
 request = json.loads(base64.b64decode(sys.argv[1]))
 root = request.get('path', '')
 MAX_JSON = 16 * 1024 * 1024
@@ -51,13 +54,77 @@ def optional(base, path):
         return None
 
 
-def documents(base, dataset, suite):
+def file_time(base, dataset, suite):
+    identifier(dataset, True)
+    identifier(suite)
+    path = within(base, os.path.join(base, dataset, '.ageval', 'suite-runs', suite))
+    mtimes = []
+    for name in ('summary.json', 'progress.json'):
+        try:
+            info = os.stat(within(base, os.path.join(path, name)))
+            if stat.S_ISREG(info.st_mode):
+                mtimes.append(info.st_mtime)
+        except FileNotFoundError:
+            pass
+    return datetime.fromtimestamp(max(mtimes), timezone.utc).isoformat() if mtimes else None
+
+
+def documents(base, dataset, suite, include_file_time=True):
     identifier(dataset, True)
     identifier(suite)
     path = within(base, os.path.join(base, dataset, '.ageval', 'suite-runs', suite))
     summary = optional(base, os.path.join(path, 'summary.json'))
     progress = None if summary is not None else optional(base, os.path.join(path, 'progress.json'))
-    return {'dataset': dataset, 'suite': suite, 'summary': summary, 'progress': progress}
+    src = summary if summary is not None else progress or {}
+    modified = file_time(base, dataset, suite) if include_file_time and not (src.get('updated_at') or src.get('finished_at')) else None
+    return {'dataset': dataset, 'suite': suite, 'summary': summary, 'progress': progress, 'modifiedAt': modified}
+
+
+def inspect_record(base, dataset, suite):
+    identifier(dataset, True)
+    identifier(suite)
+    target = os.path.join(base, dataset, '.ageval', 'suite-runs', suite)
+    target = os.path.normpath(target)
+    current = base
+    for part in os.path.relpath(target, base).split(os.sep):
+        current = os.path.join(current, part)
+        info = os.lstat(current)
+        if not stat.S_ISDIR(info.st_mode) or stat.S_ISLNK(info.st_mode):
+            raise ValueError('Suite path must contain real directories only')
+    if within(base, target) != target:
+        raise ValueError('Suite path changed')
+    info = os.lstat(target)
+    docs, status_value = [], ''
+    for name in ('summary.json', 'progress.json'):
+        path = os.path.join(target, name)
+        try:
+            if stat.S_ISLNK(os.lstat(path).st_mode):
+                raise ValueError('Suite evidence symlink is not removable')
+            value = bounded(base, path, MAX_JSON)['text']
+            data = json.loads(value)
+            status_value = status_value or data.get('status', '')
+            docs.append([name, value])
+        except FileNotFoundError:
+            pass
+    if status_value not in ('complete', 'failed', 'error', 'cancelled', 'canceled', 'interrupted'):
+        raise ValueError('Only terminal suite records can be removed; running or unknown status is protected')
+    fingerprint = hashlib.sha256(json.dumps([target, info.st_dev, info.st_ino, info.st_mtime_ns, info.st_ctime_ns, docs]).encode()).hexdigest()
+    return {'dataset': dataset, 'suite': suite, 'path': target, 'status': status_value, 'fingerprint': fingerprint}
+
+
+def task_timing(base, dataset, src, task, run):
+    identifier(task)
+    refs = [t for t in (src.get('tasks') or []) + (src.get('task_refs') or []) if t.get('task_id') == task]
+    run = run or next((t.get('run_id') for t in refs if t.get('run_id')), None)
+    identifier(run)
+    ids = [r for t in refs for r in [t.get('run_id')] + (t.get('attempt_run_ids') or [])]
+    if run not in ids:
+        raise ValueError('Attempt does not belong to selected task')
+    for path in [os.path.join(base, dataset, '.ageval', 'runs', run, 'summary.json'), os.path.join(base, dataset, 'tasks', task, '.ageval', 'runs', run, 'summary.json')]:
+        summary = optional(base, path)
+        if summary is not None:
+            return {k: summary.get(k) for k in ('phase_timing', 'started_at', 'started', 'finished_at', 'finished', 'duration_ms') if k in summary}
+    raise ValueError('Attempt summary is unavailable on this source')
 
 
 def perform():
@@ -69,6 +136,25 @@ def perform():
     base = os.path.realpath(root)
     if not os.path.isdir(base):
         raise ValueError('Directory is unavailable')
+    if op == 'remove_preview':
+        return inspect_record(base, request['dataset'], request['suite'])
+    if op == 'remove_confirm':
+        expected = request['expected']
+        current = inspect_record(base, expected['dataset'], expected['suite'])
+        if current['path'] != expected['path'] or current['fingerprint'] != expected['fingerprint']:
+            raise ValueError('Suite changed after confirmation; preview again')
+        trash = os.path.join(os.path.dirname(os.path.dirname(current['path'])), 'suite-run-trash')
+        if not os.path.lexists(trash):
+            os.mkdir(trash, 0o700)
+        info = os.lstat(trash)
+        if not stat.S_ISDIR(info.st_mode) or stat.S_ISLNK(info.st_mode) or os.path.realpath(trash) != trash:
+            raise ValueError('Recycle path must be a real directory')
+        destination = os.path.join(trash, current['suite'] + '-' + str(uuid.uuid4()))
+        checked = inspect_record(base, expected['dataset'], expected['suite'])
+        if checked['fingerprint'] != expected['fingerprint']:
+            raise ValueError('Suite changed after confirmation; preview again')
+        os.rename(current['path'], destination)
+        return {'dataset': current['dataset'], 'suite': current['suite'], 'from': current['path'], 'to': destination}
     if op == 'resolve':
         return {'path': base}
     if op == 'list_dirs':
@@ -108,33 +194,50 @@ def perform():
                     if not entry.is_dir(follow_symlinks=False):
                         continue
                     try:
-                        doc = documents(base, dataset, entry.name)
+                        doc = documents(base, dataset, entry.name, False)
                         # Return only fields used by the shared row projection.
                         src = doc['summary'] if doc['summary'] is not None else doc['progress'] or {}
-                        fields = {k: src.get(k) for k in ('counts', 'model_label', 'agent_label', 'status', 'created_at', 'started_at', 'finished_at', 'duration_ms', 'n_tasks', 'metrics') if k in src}
+                        fields = {k: src.get(k) for k in ('counts', 'model_label', 'agent_label', 'status', 'created_at', 'updated_at', 'started_at', 'finished_at', 'duration_ms', 'n_tasks', 'metrics') if k in src}
                         fields['n_tasks'] = src.get('n_tasks') or len(src.get('task_ids') or src.get('tasks') or src.get('task_refs') or []) or (src.get('metrics') or {}).get('n_tasks')
-                        rows.append({'dataset': dataset, 'suite': entry.name, 'summary': fields if doc['summary'] is not None else None, 'progress': fields if doc['summary'] is None else None})
+                        rows.append({'dataset': dataset, 'suite': entry.name, 'summary': fields if doc['summary'] is not None else None, 'progress': fields if doc['summary'] is None else None, 'modifiedAt': doc['modifiedAt']})
                     except (OSError, ValueError) as error:
                         warnings.append(dataset + '/' + entry.name + ': ' + str(error))
         return {'documents': rows, 'warnings': warnings}
+    if op == 'suite_times':
+        items = request.get('items')
+        if not isinstance(items, list) or not 1 <= len(items) <= 50:
+            raise ValueError('Request 1–50 suite timestamps')
+        results = []
+        for item in items:
+            dataset, suite = item.get('dataset'), item.get('suite')
+            identifier(dataset, True)
+            identifier(suite)
+            try:
+                results.append({'dataset': dataset, 'suite': suite, 'updatedAt': file_time(base, dataset, suite), 'updatedAtSource': 'evidence-mtime'})
+            except (OSError, ValueError) as error:
+                results.append({'dataset': dataset, 'suite': suite, 'error': str(error)[:700]})
+        return {'results': results}
     if op == 'suite':
         return documents(base, request['dataset'], request['suite'])
-    if op == 'timing':
-        dataset, suite, task = request['dataset'], request['suite'], request['task']
-        identifier(task)
+    if op in ('timing', 'timings'):
+        dataset, suite = request['dataset'], request['suite']
         doc = documents(base, dataset, suite)
         src = doc['summary'] if doc['summary'] is not None else doc['progress'] or {}
-        refs = [t for t in (src.get('tasks') or []) + (src.get('task_refs') or []) if t.get('task_id') == task]
-        run = request.get('run') or next((t.get('run_id') for t in refs if t.get('run_id')), None)
-        identifier(run)
-        ids = [r for t in refs for r in [t.get('run_id')] + (t.get('attempt_run_ids') or [])]
-        if run not in ids:
-            raise ValueError('Attempt does not belong to selected task')
-        for path in [os.path.join(base, dataset, '.ageval', 'runs', run, 'summary.json'), os.path.join(base, dataset, 'tasks', task, '.ageval', 'runs', run, 'summary.json')]:
-            summary = optional(base, path)
-            if summary is not None:
-                return {k: summary.get(k) for k in ('phase_timing', 'started_at', 'started', 'finished_at', 'finished', 'duration_ms') if k in summary}
-        return {}
+        if op == 'timing':
+            return task_timing(base, dataset, src, request['task'], request.get('run'))
+        items = request.get('items')
+        if not isinstance(items, list) or not 1 <= len(items) <= 50:
+            raise ValueError('Request 1–50 task timings')
+        results = []
+        for item in items:
+            task, run = item.get('task'), item.get('run')
+            identifier(task)
+            identifier(run)
+            try:
+                results.append({'taskId': task, 'runId': run, 'raw': task_timing(base, dataset, src, task, run)})
+            except (OSError, ValueError, TypeError) as error:
+                results.append({'taskId': task, 'runId': run, 'error': str(error)[:700]})
+        return {'results': results}
     if op == 'attempt':
         dataset, suite, task = request['dataset'], request['suite'], request['task']
         identifier(task)

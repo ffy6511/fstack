@@ -56,6 +56,15 @@ test('GitHub timing reads summaries only and rejects unrelated attempts', async 
   await assert.rejects(reader.timing(source, '.', 'suite', 'task', 'other-run'), /does not belong/);
 });
 
+test('GitHub timing batch pins one revision and reads suite metadata once', async () => {
+  const { reader, source, calls } = fixture();
+  const result = await reader.timings(source, '.', 'suite', [{ task: 'task', run: 'run' }, { task: 'task', run: 'unrelated' }]);
+  assert.equal(result.results[0].timing.durationMs, null); assert.match(result.results[1].error, /belong/);
+  assert.equal(calls.filter(p => p.includes('/commits/')).length, 1);
+  assert.equal(calls.filter(p => p.endsWith('/git/blobs/summary')).length, 1);
+  assert.equal(calls.some(p => p.includes('trajectory') || p.includes('never-read')), false);
+});
+
 test('GitHub avatars only use the public GitHub avatar host', () => {
   assert.equal(githubAvatarUrl('https://avatars.githubusercontent.com/u/42?v=4'), 'https://avatars.githubusercontent.com/u/42?v=4&s=80');
   for (const url of [null, '', 'javascript:alert(1)', 'https://evil.test/image', 'http://avatars.githubusercontent.com/u/42', 'https://user:password@avatars.githubusercontent.com/u/42']) assert.equal(githubAvatarUrl(url), null);

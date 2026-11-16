@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { readFile, writeFile, mkdir, rename, realpath } from 'node:fs/promises';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import { EvidenceError, segment, redact } from './evidence.js';
-import { parseSource, keyOf, readSuite, readAttempt, readTaskTiming } from './sources.js';
+import { parseSource, keyOf, readSuite, readAttempt, readTaskTiming, readTaskTimings } from './sources.js';
 import { assertHost } from './remote.js';
 import { github } from './github.js';
 
@@ -219,6 +219,7 @@ export async function trackingStore(file, { read = readSuite, attempt = readAtte
       });
       return { id, source, dataset: run.dataset, suite: run.suite, readAt: new Date(now()).toISOString(), revision: source.commit || null, evidence: value };
     },
+    async timings(id, items) { const run = find(id); return readTaskTimings(run.observedSource || run.source, run.dataset, run.suite, items); },
     async timing(id, task, runId) { const run = find(id); return readTaskTiming(run.observedSource || run.source, run.dataset, run.suite, task, runId); },
     async detail(id) { const run = find(id); return read(run.observedSource || run.source, run.dataset, run.suite); },
     async attempt(id, task, runId) { const run = find(id); return attempt(run.observedSource || run.source, run.dataset, run.suite, task, runId); },

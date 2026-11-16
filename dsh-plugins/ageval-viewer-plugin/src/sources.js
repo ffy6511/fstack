@@ -1,6 +1,8 @@
 import { timingOf } from './display.js';
 import { remoteRead } from './remote.js';
-import { taskTiming } from './evidence.js';
+import { taskTiming, taskTimings, suiteFileTime, segment } from './evidence.js';
+import { timingRequests } from './timing-batch.js';
+import { inspectSuiteRecord, recycleSuiteRecord, suiteRemovalService } from './suite-records.js';
 import { github, githubSource, githubLabel } from './github.js';
 import { randomUUID } from 'node:crypto';
 import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
@@ -62,6 +64,31 @@ export async function readTaskTiming(source, dataset, suite, task, run) {
   if (source.kind === 'github') return github.timing(source, dataset, suite, task, run);
   if (source.kind === 'ssh') return { ...timingOf(await remoteRead(source.host, { op: 'timing', path: source.path, dataset, suite, task, run })), runId: run };
   return taskTiming(source.path, dataset, suite, task, run);
+}
+export async function readTaskTimings(source, dataset, suite, input) {
+  const items = timingRequests(input);
+  if (source.kind === 'github') return github.timings(source, dataset, suite, items);
+  if (source.kind === 'local') return taskTimings(source.path, dataset, suite, items);
+  const value = await remoteRead(source.host, { op: 'timings', path: source.path, dataset, suite, items });
+  return { results: value.results.map(item => item.error ? item : { taskId: item.taskId, runId: item.runId, timing: { ...timingOf(item.raw), runId: item.runId } }) };
+}
+export async function readSuiteFileTimes(source, items) {
+  if (!Array.isArray(items) || !items.length || items.length > 50) throw new EvidenceError('Request 1–50 suite timestamps');
+  for (const item of items) { if (item?.dataset !== '.') segment(item?.dataset); segment(item?.suite); }
+  if (source.kind === 'github') throw new EvidenceError('GitHub has no filesystem modification time', 400);
+  if (source.kind === 'ssh') return remoteRead(source.host, { op: 'suite_times', path: source.path, items });
+  const results = [];
+  for (const { dataset, suite } of items) {
+    try { results.push({ dataset, suite, updatedAt: await suiteFileTime(source.path, dataset, suite), updatedAtSource: 'evidence-mtime' }); }
+    catch (error) { results.push({ dataset, suite, error: error.message }); }
+  }
+  return { results };
+}
+export function createSuiteRemoval() {
+  return suiteRemovalService({
+    inspect: (source, dataset, suite) => source.kind === 'local' ? inspectSuiteRecord(source.path, dataset, suite) : remoteRead(source.host, { op: 'remove_preview', path: source.path, dataset, suite }),
+    recycle: (source, expected) => source.kind === 'local' ? recycleSuiteRecord(source.path, expected) : remoteRead(source.host, { op: 'remove_confirm', path: source.path, expected }),
+  });
 }
 export function readSuites(source) { return source.kind === 'github' ? github.suites(source) : source.kind === 'ssh' ? remoteSuites(source) : listSuites(source.path); }
 export function readSuite(source, dataset, suite) { return source.kind === 'github' ? github.suite(source, dataset, suite) : source.kind === 'ssh' ? remoteSuite(source, dataset, suite) : suiteDetail(source.path, dataset, suite); }

@@ -773,7 +773,7 @@ body {
 }
 .ageval-suite-table {
   width: 100%;
-  min-width: 696px;
+  min-width: 864px;
   table-layout: fixed;
   border-collapse: separate;
   border-spacing: 0;
@@ -1092,6 +1092,12 @@ body {
   gap: 6px;
   padding: 8px var(--ageval-inset) 0;
 }
+.ageval-task-search { width: 100%; min-width: 0; }
+.ageval-pagination { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding-bottom: 6px; }
+.ageval-pagination .ageval-meta { margin-right: auto; }
+.ageval-removal-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 8px; padding: 10px 12px; border-bottom: 0.5px solid var(--ageval-border); }
+.ageval-removal-item .ageval-subline { grid-column: 1 / -1; overflow-wrap: anywhere; }
+.ageval-removal-item strong { overflow-wrap: anywhere; }
 .ageval-verdict {
   flex: 0 0 auto;
   width: 46px;

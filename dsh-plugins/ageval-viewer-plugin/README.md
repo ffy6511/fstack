@@ -10,19 +10,27 @@
 dsh plugin --profile web add ./dsh-plugins/ageval-viewer-plugin
 ```
 
-通过 DSH 插件管理器加载或重载此插件。不要为了更新插件关闭正在工作的 DSH App。插件只读数据，不启动、重试、replace、删除或修改评测。
+通过 DSH 插件管理器加载或重载此插件。不要为了更新插件关闭正在工作的 DSH App。浏览与 Agent 工具只读，不启动、重试或修改评测；用户可在本机/SSH 模式显式确认后移除 suite-run 记录，详情见下文。
 
 ## 使用
 
 1. 打开右侧栏的 `ageval`。
 2. 点击顶部数据源：本机输入绝对路径；SSH 选择本机配置中的 Host；GitHub 输入 `owner/repository`、分支或 tag，再逐层浏览仓库目录。GitHub 私有仓库复用本机 `gh` 的安全登录；没有登录时可从弹窗发起设备登录。
 3. 点击“保存并打开”。已保存路径保留最近 12 个，可从顶部“最近路径”或数据源弹窗快速切换，然后按 bench、model、suite 筛选。
-列表在各 bench 内默认按 suite 创建时间倒序，可切换创建时间正序、通过率升降序或名称排序；缺失值始终排在最后。suite 行显示创建时间。task 行显示摘要已有的开始/完成时间和耗时；旧记录缺少时间时可点击“读取时间”，只按需读取当前 Attempt 的 summary，不下载轨迹。没有记录的时间明确显示未知，不使用文件修改时间或 suite 时间代替。
+列表在各 bench 内默认按 suite 创建时间倒序，可按创建时间、更新时间、通过率升降序或名称排序；缺失值始终排在最后。suite 创建时间与更新时间分列显示。更新时间优先用 `updated_at`，其次 `finished_at`；本机/SSH 均无声明时，在列表显示后异步分批补读 summary/progress 文件修改时间（每批最多 50 条，SSH 每批一次连接），tooltip 标明来源。补读不阻塞首屏；待获取、读取中与读取失败分别提示，刷新可重试。GitHub 不用 commit 时间冒充更新时间。
+
+task 列表每页 20 项，筛选后重新分页。自动批量补读当前页缺失的 Attempt summary 时间，SSH 每批仅建立一次连接，不下载轨迹；切页不扫描其他页，已读取结果在本次详情内复用，可点“重新读取本页时间”重试。明确区分待获取、读取中、读取失败、摘要没有记录时间和没有 attempt；不以文件修改时间或 suite 时间冒充 task 时间。
 
 4. 勾选 suite，输入问题后发送给当前 session，或新建一个 session 让默认 agent 分析。
 5. 点开 suite 查看 P/F/E、通过率、错误分桶和 task。点 task 打开轨迹：按用户、Agent、思考、工具、观察、终端、权限筛选，右侧细条是步骤大纲，点一下跳到那一步。`文件` tab 里是 result.json 和 summary.json。
 
 注入给 agent 的上下文包含只读声明、dataset 根目录、suite 的状态与计数，以及用于继续用 `ageval view` 检查的路径。Host 端还注册 `ageval_read_suite` 工具，供 agent 按 bench 和 suite id 读取一个 suite 的详细摘要。
+
+## 移除 suite-run 记录
+
+本机或 SSH 模式勾选 1–24 条 suite 后，点击底部垃圾桶。服务端先检查实际路径与记录状态；确认弹窗列出来源、suite、状态和准确目录。预览 2 分钟有效且只能确认一次；确认前重新核对证据指纹，变化过的记录不会移动。只允许记录状态为 complete、failed、error、cancelled/canceled 或 interrupted；running 和未知状态拒绝移除，不把状态判断当作进程存活验证。
+
+确认只把选中的 `.ageval/suite-runs/<suite>` 目录移动到同级 `.ageval/suite-run-trash/<suite>-<uuid>`，不递归删除、不停止进程。共享 `.ageval/runs`、task 文件及追踪历史保留；已追踪的 suite 下次读取会提示源记录不可用。部分失败会逐条报告，成功项从列表和选择中移除；没有内置恢复或清空回收目录按钮。GitHub 保持只读，不提供此操作。
 
 ## 运行追踪
 
@@ -78,7 +86,7 @@ GitHub source 固定到打开时解析出的 commit。通过本机 `gh` 读取�
 
 复用 DSH 所在 Mac 用户的 OpenSSH 配置（包含 Include、IdentityFile、ProxyCommand/ProxyJump、ssh-agent）。连接前以 `ssh -G` 展示配置，实际连接仍用 Host 别名。仅支持配置中的具体别名，通配符 Host 不作为端点。
 
-服务器需要 Python 3。固定只读脚本经 SSH stdin 执行，不在服务器安装 daemon、不写脚本文件。第一次连接必须先在用户终端确认主机指纹，并让密钥可通过 ssh-agent/Keychain 非交互认证；插件不收集或存储密码。端口和跳板配置沿用 OpenSSH，控制连接使用独立短连接，避免遗留 ControlPath 不可用。
+服务器需要 Python 3。固定脚本经 SSH stdin 执行，不在服务器安装 daemon、不写脚本文件。浏览操作只读；只有用户确认移除记录时才调用受限的目录移动操作。第一次连接必须先在用户终端确认主机指纹，并让密钥可通过 ssh-agent/Keychain 非交互认证；插件不收集或存储密码。端口和跳板配置沿用 OpenSSH，控制连接使用独立短连接，避免遗留 ControlPath 不可用。
 
 列表只取 suite 的 summary/progress，点开 Attempt 才读取 result/summary/trajectory，以及存在时的 evaluation observation/checks。不会进入 `box/`、源码、依赖、缓存和 invocation raw。断网时显示错误，不伪装为最新结果，不创建本地镜像。配置保存在 `$DSH_HOME/ageval-viewer/config.json`（默认 `~/.dsh/ageval-viewer/config.json`），旧 root 配置自动兼容。
 
@@ -87,7 +95,7 @@ GitHub source 固定到打开时解析出的 commit。通过本机 `gh` 读取�
 - dataset 根目录必须是绝对路径且存在。
 - suite、bench、task 和 attempt 的读取都限制在 dataset 根目录内。
 - Web API 只接受 loopback 请求。
-- 插件不执行 ageval CLI，不读取凭证，不写 `.ageval`。
+- 插件不执行 ageval CLI；GitHub 凭证由本机 `gh` 管理，不进入浏览器或配置。Agent 工具只读；suite-run 移除仅在显式二次确认后移动受限目录，拒绝路径穿越、symlink 和非终态记录。
 
 ## 已知限制
 

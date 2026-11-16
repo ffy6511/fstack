@@ -1,4 +1,5 @@
 import { timingOf } from './display.js';
+import { timingRequests, collectTimings } from './timing-batch.js';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { EvidenceError, rowOf, detailOf, redact, segment } from './evidence.js';
@@ -173,6 +174,16 @@ export function githubReader(api = githubApi) {
     if (!summary && !progress) throw new EvidenceError('Suite summary/progress is missing', 404);
     return { summary: summary ? JSON.parse(summary.text) : null, progress: progress ? JSON.parse(progress.text) : null };
   }
+  async function timingFromSnapshot(snap, detail, dataset, taskId, requestedRun) {
+    segment(taskId);
+    const task = detail.tasks.find(t => t.taskId === taskId);
+    const runId = requestedRun || task?.runId; segment(runId);
+    if (!task?.runIds.includes(runId)) throw new EvidenceError('Attempt does not belong to task', 403);
+    let value = await optional(snap.source.repo, snap.root, join(dataset, '.ageval/runs', runId, 'summary.json'), CAP);
+    if (!value) value = await optional(snap.source.repo, snap.root, join(dataset, 'tasks', taskId, '.ageval/runs', runId, 'summary.json'), CAP);
+    if (!value) throw new EvidenceError('Attempt summary is unavailable on this source', 404);
+    return { ...timingOf(JSON.parse(value.text)), runId };
+  }
   return {
     cacheStatus, clearCache,
     async resolve(source) { return (await root({ ...source, commit: undefined })).source; },
@@ -201,14 +212,13 @@ export function githubReader(api = githubApi) {
     },
     async suite(source, dataset, suite) { const snap = await root(source); const d = await docs(snap, dataset, suite); return detailOf(dataset, suite, d.summary, d.progress); },
     async timing(source, dataset, suite, taskId, requestedRun) {
-      segment(taskId);
       const snap = await root(source), d = await docs(snap, dataset, suite);
-      const task = detailOf(dataset, suite, d.summary, d.progress).tasks.find(t => t.taskId === taskId);
-      const runId = requestedRun || task?.runId; segment(runId);
-      if (!task?.runIds.includes(runId)) throw new EvidenceError('Attempt does not belong to task', 403);
-      let value = await optional(snap.source.repo, snap.root, join(dataset, '.ageval/runs', runId, 'summary.json'), CAP);
-      if (!value) value = await optional(snap.source.repo, snap.root, join(dataset, 'tasks', taskId, '.ageval/runs', runId, 'summary.json'), CAP);
-      return { ...timingOf(value ? JSON.parse(value.text) : {}), runId };
+      return timingFromSnapshot(snap, detailOf(dataset, suite, d.summary, d.progress), dataset, taskId, requestedRun);
+    },
+    async timings(source, dataset, suite, input) {
+      const items = timingRequests(input), snap = await root(source), d = await docs(snap, dataset, suite);
+      const detail = detailOf(dataset, suite, d.summary, d.progress);
+      return collectTimings(items, item => timingFromSnapshot(snap, detail, dataset, item.task, item.run));
     },
     async attempt(source, dataset, suite, taskId, requestedRun) {
       segment(taskId);

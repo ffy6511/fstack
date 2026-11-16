@@ -14,7 +14,7 @@ type DirectoryEntry = { name: string; path: string };
 type Row = {
   dataset: string; suite: string; model?: string; harness?: string; status: string;
   pass?: number | null; fail?: number | null; error?: number | null; expected?: number | null;
-  passRate?: number | null; clean?: boolean; createdAt?: string | null;
+  passRate?: number | null; clean?: boolean; createdAt?: string | null; updatedAt?: string | null; updatedAtSource?: string | null; updatedAtState?: 'pending' | 'loading' | 'missing' | 'error'; updatedAtError?: string;
 };
 type Timing = { startedAt?: string | null; finishedAt?: string | null; durationMs?: number | null };
 type Task = Timing & { taskId: string; status: string; score?: unknown; errorTitle?: string; errorMessage?: string; runId?: string; runIds?: string[] };
@@ -386,26 +386,32 @@ function AttemptView({ attempt, onBack }: { attempt: Attempt; onBack: () => void
           h(Trajectory, { raw: trajectory.text, truncated: trajectory.truncated }))
         : h('div', { className: 'ageval-empty' }, dict.noSteps));
 }
-function TaskTime({ task, runId, onRead }: { task: Task; runId: string; onRead?: (task: Task, runId: string) => Promise<Timing> }) {
-  const [loaded, setLoaded] = useState<Timing | null>(null), [busy, setBusy] = useState(false), [error, setError] = useState('');
-  useEffect(() => { setLoaded(null); setError(''); }, [runId]);
-  const request = useRef(0);
-  useEffect(() => { request.current++; return () => { request.current++; }; }, [runId]);
-  const timing = loaded || (runId === task.runId ? task : {});
-  const known = timing.startedAt || timing.finishedAt || timing.durationMs != null;
-  return h('div', { className: 'ageval-task-time' },
-    known ? h('span', { title: [timing.startedAt, timing.finishedAt].filter(Boolean).join(' → ') }, [timing.startedAt ? '开始 ' + formatTimestamp(timing.startedAt) : timing.finishedAt ? '完成 ' + formatTimestamp(timing.finishedAt) : null, timing.durationMs != null ? formatDuration(timing.durationMs) : null].filter(Boolean).join(' · ')) : h('span', null, '时间未记录'),
-    !known && !loaded && runId && onRead ? h(HostButton, { size: 'sm', variant: 'ghost', disabled: busy, onClick: (event: any) => {
-      event.stopPropagation(); const own = ++request.current; setBusy(true); setError('');
-      void onRead(task, runId).then(value => { if (request.current === own) setLoaded(value); }).catch((cause: Error) => { if (request.current === own) setError(cause.message); }).finally(() => { if (request.current === own) setBusy(false); });
-    } }, busy ? '读取中…' : '读取时间') : null,
-    error ? h('span', { className: 'ageval-error-text', role: 'status' }, error) : null);
+type TimingResult = { timing?: Timing; error?: string };
+type TimingItem = { task: string; run: string };
+function hasTiming(value: Timing) { return Boolean(value.startedAt || value.finishedAt || value.durationMs != null); }
+function timingKey(task: string, run: string) { return JSON.stringify([task, run]); }
+export function taskPage(tasks: Task[], page: number, size = 20) {
+  const pages = Math.max(1, Math.ceil(tasks.length / size));
+  const current = Math.min(Math.max(0, page), pages - 1);
+  return { current, pages, items: tasks.slice(current * size, (current + 1) * size) };
 }
-function DetailView({ data, selected, error, busy, onBack, onToggle, onAttempt, onTiming }: { data: DetailData; selected: boolean; error: string; busy: string; onBack: () => void; onToggle?: () => void; onAttempt: (task: Task, runId: string) => void; onTiming?: (task: Task, runId: string) => Promise<Timing> }) {
+function TaskTime({ task, runId, result, loading }: { task: Task; runId: string; result?: TimingResult; loading: boolean }) {
+  const timing = result?.timing || (runId === task.runId ? task : {});
+  return h('div', { className: 'ageval-task-time' }, hasTiming(timing)
+    ? h('span', { title: [timing.startedAt, timing.finishedAt].filter(Boolean).join(' → ') }, [timing.startedAt ? '开始 ' + formatTimestamp(timing.startedAt) : timing.finishedAt ? '完成 ' + formatTimestamp(timing.finishedAt) : null, timing.durationMs != null ? formatDuration(timing.durationMs) : null].filter(Boolean).join(' · '))
+    : h('span', { className: result?.error ? 'ageval-error-text' : undefined, title: result?.error, role: result?.error ? 'status' : undefined }, result?.error ? '时间读取失败' : result?.timing ? '摘要未记录时间' : !runId ? '尚无 attempt' : loading ? '读取时间中…' : '时间待获取'));
+}
+export function DetailView({ data, selected, error, busy, onBack, onToggle, onAttempt, onTimings }: { data: DetailData; selected: boolean; error: string; busy: string; onBack: () => void; onToggle?: () => void; onAttempt: (task: Task, runId: string) => void; onTimings?: (items: TimingItem[]) => Promise<{ results: (TimingResult & { taskId: string; runId: string })[] }> }) {
   const [query, setQuery] = useState('');
   const [verdict, setVerdict] = useState('all');
   const [bucket, setBucket] = useState('');
   const [runs, setRuns] = useState({} as Record<string, string>);
+  const [page, setPage] = useState({ index: 0, filter: '', data }), [retry, setRetry] = useState(0);
+  const [timings, setTimings] = useState({} as Record<string, TimingResult>);
+  const [timingBusy, setTimingBusy] = useState(false);
+  const cache = useRef({} as Record<string, TimingResult>);
+  const batchReader = useRef(onTimings); batchReader.current = onTimings;
+  useEffect(() => { cache.current = {}; setTimings({}); setRuns({}); }, [data]);
   const counts = useMemo(() => {
     const tally = { pass: 0, fail: 0, error: 0, other: 0 };
     for (const task of data.tasks) tally[verdictOf(task.status)] += 1;
@@ -416,6 +422,31 @@ function DetailView({ data, selected, error, busy, onBack, onToggle, onAttempt, 
     const hay = (task.taskId + ' ' + (task.errorTitle || '')).toLowerCase();
     return (!needle || hay.includes(needle)) && (verdict === 'all' || verdictOf(task.status) === verdict) && (!bucket || task.errorTitle === bucket);
   }), [data.tasks, query, verdict, bucket]);
+  const filter = JSON.stringify([query, verdict, bucket]);
+  // Reset synchronously so a changed filter never fetches the previous page first.
+  const paged = taskPage(tasks, page.data === data && page.filter === filter ? page.index : 0);
+  const goPage = (index: number) => setPage({ index, filter, data });
+  const visibleKey = JSON.stringify(paged.items.map(task => [task.taskId, runs[task.taskId] || task.runId || '']));
+  useEffect(() => {
+    let alive = true;
+    const items = paged.items.flatMap(task => {
+      const run = runs[task.taskId] || task.runId || '';
+      return run && !cache.current[timingKey(task.taskId, run)] && !hasTiming(run === task.runId ? task : {}) ? [{ task: task.taskId, run }] : [];
+    });
+    if (!items.length || !batchReader.current) { setTimingBusy(false); return; }
+    setTimingBusy(true);
+    void batchReader.current(items).then(value => {
+      if (!alive) return;
+      const results = new Map(value.results.map(item => [timingKey(item.taskId, item.runId), item]));
+      for (const item of items) cache.current[timingKey(item.task, item.run)] = results.get(timingKey(item.task, item.run)) || { error: 'Batch response missing task' };
+      setTimings({ ...cache.current });
+    }).catch((cause: Error) => {
+      if (!alive) return;
+      for (const item of items) cache.current[timingKey(item.task, item.run)] = { error: cause.message };
+      setTimings({ ...cache.current });
+    }).finally(() => { if (alive) setTimingBusy(false); });
+    return () => { alive = false; };
+  }, [data, visibleKey, retry]);
   const row = data.row;
   return h('div', { className: 'ageval-detail' },
     h('header', { className: 'ageval-detail-head' },
@@ -426,9 +457,14 @@ function DetailView({ data, selected, error, busy, onBack, onToggle, onAttempt, 
     h('div', { className: 'ageval-kpis' }, onToggle ? h(HostCheckbox, { className: 'ageval-check', checked: selected, onChange: onToggle, label: selected ? '已加入分析' : dict.addContext }) : null, h(Metrics, { row }), h('span', { className: 'ageval-meta' }, row.status)),
     Object.keys(data.errors).length ? h('div', { className: 'ageval-chips' }, Object.entries(data.errors).map(([name, count]) => h(HostButton, { key: name, size: 'sm', variant: bucket === name ? 'toolbar' : 'ghost', 'aria-pressed': bucket === name, onClick: () => setBucket(current => current === name ? '' : name) }, name + ' ' + count))) : null,
     h('div', { className: 'ageval-chips' }, h(HostSegments, { id: 'ageval-task-verdict', value: verdict, onChange: setVerdict, label: 'Task 结果分组', className: 'ageval-verdict-segments', options: [['all', '全部 ' + data.tasks.length], ['pass', 'PASS ' + counts.pass], ['fail', 'FAIL ' + counts.fail], ['error', 'ERROR ' + counts.error]].map(([value, label]) => ({ value, label })) })),
-    h('p', { className: 'ageval-traj-note' }, 'Suite 创建时间：' + formatTimestamp(row.createdAt)),
-    h('div', { className: 'ageval-task-tools' }, h('input', { className: 'ageval-control', value: query, placeholder: '搜索 task', onChange: (event: any) => setQuery(event.target.value) })),
-    h('div', { className: 'ageval-detail-scroll' }, tasks.length ? tasks.map(task => {
+    h('p', { className: 'ageval-traj-note' }, 'Suite 创建：' + formatTimestamp(row.createdAt) + ' · 更新：' + (row.updatedAt ? formatTimestamp(row.updatedAt) : '未记录')),
+    h('div', { className: 'ageval-task-tools' }, h(HostInput, { className: 'ageval-task-search', value: query, placeholder: '搜索 task', 'aria-label': '搜索 task', onChange: (event: any) => setQuery(event.target.value) }),
+      h('div', { className: 'ageval-pagination' },
+        h('span', { className: 'ageval-meta', 'aria-live': 'polite' }, `${tasks.length} jobs · ${paged.current + 1} / ${paged.pages} 页 · 每页 20`),
+        h(Button, { disabled: paged.current === 0, onClick: () => goPage(paged.current - 1) }, '上一页'),
+        h(Button, { disabled: paged.current + 1 >= paged.pages, onClick: () => goPage(paged.current + 1) }, '下一页'),
+        h(ActionIcon, { glyph: RefreshIcon, label: '重新读取本页时间', disabled: timingBusy || !onTimings, onClick: () => { for (const task of paged.items) delete cache.current[timingKey(task.taskId, runs[task.taskId] || task.runId || '')]; setTimings({ ...cache.current }); setRetry(value => value + 1); } }))),
+    h('div', { className: 'ageval-detail-scroll' }, tasks.length ? paged.items.map(task => {
       const runId = runs[task.taskId] || task.runId || '';
       const ids = task.runIds && task.runIds.length ? task.runIds : (task.runId ? [task.runId] : []);
       return h('div', {
@@ -437,10 +473,16 @@ function DetailView({ data, selected, error, busy, onBack, onToggle, onAttempt, 
         onKeyDown: (event: any) => { if (!runId || event.target.closest('input,select')) return; if (event.key === 'Enter') onAttempt(task, runId); },
       },
         h('span', { className: 'ageval-verdict ageval-verdict--' + verdictOf(task.status) }, verdictOf(task.status) === 'other' ? (task.status || '-') : verdictOf(task.status)),
-        h('div', { className: 'ageval-task-main' }, h('div', { className: 'ageval-task-id' }, task.taskId), h(TaskTime, { key: runId, task, runId, onRead: onTiming }), task.errorTitle ? h('div', { className: 'ageval-subline ageval-error-text' }, task.errorTitle) : null),
+        h('div', { className: 'ageval-task-main' }, h('div', { className: 'ageval-task-id' }, task.taskId), h(TaskTime, { key: runId, task, runId, result: timings[timingKey(task.taskId, runId)], loading: timingBusy }), task.errorTitle ? h('div', { className: 'ageval-subline ageval-error-text' }, task.errorTitle) : null),
         task.score == null ? null : h('span', { className: 'ageval-metrics', title: String(task.score) }, formatScore(task.score)),
         ids.length > 1 ? h(Select, { className: 'ageval-attempt-select', value: runId, aria: 'Attempt', onChange: (value: string) => setRuns(prev => ({ ...prev, [task.taskId]: value })), options: ids.map(id => [id, id] as [string, string]) }) : null);
     }) : h('div', { className: 'ageval-empty' }, dict.noTasks)));
+}
+export function UpdatedTime({ row }: { row: Row }) {
+  const state = row.updatedAtState;
+  const label = row.updatedAt ? formatTimestamp(row.updatedAt) : state === 'pending' ? '时间待获取' : state === 'loading' ? '读取中…' : state === 'error' ? '更新时间读取失败' : '更新时间未记录';
+  const title = row.updatedAt ? (row.updatedAtSource === 'evidence-mtime' ? '摘要文件修改时间 · ' : row.updatedAtSource === 'finished_at' ? '完成时间（未记录 updated_at） · ' : '') + row.updatedAt : row.updatedAtError || label;
+  return h('time', { dateTime: row.updatedAt || undefined, title, className: state === 'error' && !row.updatedAt ? 'ageval-error-text' : undefined }, label);
 }
 function SuiteList({ rows, bench, selected, onToggle, onOpen, sort, onSort }: { rows: Row[]; bench: string; selected: Record<string, Row>; onToggle: (row: Row) => void; onOpen: (row: Row) => void; sort: string; onSort: (order: string) => void }) {
   const sortBtn = (column: string, ascFirst: boolean, label: string) => {
@@ -460,7 +502,8 @@ function SuiteList({ rows, bench, selected, onToggle, onOpen, sort, onSort }: { 
       h('th', { scope: 'rowgroup', className: 'ageval-table-identity' }, bench, sortBtn('name', true, 'Suite 名称')),
       h('th', { scope: 'col', className: 'ageval-table-rate' }, h('span', { className: 'ageval-column-title' }, h(RateIcon, { width: 14, height: 14, 'aria-hidden': true }), '通过率', sortBtn('rate', false, '通过率'))),
       h('th', { scope: 'col', className: 'ageval-table-counts' }, h('span', { className: 'ageval-column-title' }, h(CountsIcon, { width: 14, height: 14, 'aria-hidden': true }), 'P / F / E')),
-      h('th', { scope: 'col', className: 'ageval-table-time' }, h('span', { className: 'ageval-column-title' }, h(TimeIcon, { width: 14, height: 14, 'aria-hidden': true }), '创建时间', sortBtn('time', false, '创建时间')))),
+      h('th', { scope: 'col', className: 'ageval-table-time' }, h('span', { className: 'ageval-column-title' }, h(TimeIcon, { width: 14, height: 14, 'aria-hidden': true }), '创建时间', sortBtn('time', false, '创建时间'))),
+      h('th', { scope: 'col', className: 'ageval-table-time' }, h('span', { className: 'ageval-column-title' }, h(TimeIcon, { width: 14, height: 14, 'aria-hidden': true }), '更新时间', sortBtn('updated', false, '更新时间')))),
     ...rows.map(row => {
       const key = row.dataset + '/' + row.suite;
       return h('tr', {
@@ -473,12 +516,13 @@ function SuiteList({ rows, bench, selected, onToggle, onOpen, sort, onSort }: { 
           h('div', { className: 'ageval-subline', title: [row.model, row.harness].filter(Boolean).join(' · ') }, [row.model || 'model unknown', row.harness].filter(Boolean).join(' · '))),
         h('td', { className: 'ageval-table-rate' }, h(ScoreRing, { value: row.passRate })),
         h('td', { className: 'ageval-table-counts' }, h(Metrics, { row, compact: true })),
-        h('td', { className: 'ageval-table-time' }, h('time', { dateTime: row.createdAt || undefined, title: row.createdAt || '时间未记录' }, formatTimestamp(row.createdAt))));
+        h('td', { className: 'ageval-table-time' }, h('time', { dateTime: row.createdAt || undefined, title: row.createdAt || '时间未记录' }, formatTimestamp(row.createdAt))),
+        h('td', { className: 'ageval-table-time' }, UpdatedTime({ row })));
     }));
 }
 export function SuiteTable({ groups, root, selected, onToggle, onOpen, sort, onSort }: { groups: [string, Row[]][]; root: string; selected: Record<string, Row>; onToggle: (row: Row) => void; onOpen: (row: Row) => void; sort: string; onSort: (order: string) => void }) {
   return h('table', { className: 'ageval-suite-table', 'aria-label': 'Suite runs，按 bench 分组' },
-    h('colgroup', null, h('col', { className: 'ageval-col-check' }), h('col', { className: 'ageval-col-identity' }), h('col', { className: 'ageval-col-rate' }), h('col', { className: 'ageval-col-counts' }), h('col', { className: 'ageval-col-time' })),
+    h('colgroup', null, h('col', { className: 'ageval-col-check' }), h('col', { className: 'ageval-col-identity' }), h('col', { className: 'ageval-col-rate' }), h('col', { className: 'ageval-col-counts' }), h('col', { className: 'ageval-col-time' }), h('col', { className: 'ageval-col-time' })),
     ...groups.map(([name, rows]) => h(SuiteList, { key: name, rows, bench: benchLabel(name, root), selected, onToggle, onOpen, sort, onSort })));
 }
 function sourceDisplay(source: DataSource): string {
@@ -852,7 +896,7 @@ export function TrackingPanel({ ctx, props }: { ctx: any; props: any }) {
     finally { if (alive.current) setSending(false); }
   };
   if (attempt) return h(AttemptView, { attempt, onBack: () => { version.current++; setAttempt(null); setError(''); } });
-  if (detail) return h(DetailView, { data: detail, selected: selectedIds.includes(active.id), error, busy: busy ? dict.loading : '', onBack: () => { version.current++; setDetail(null); setActive(null); setError(''); }, onToggle: () => toggleAnalysis(active.id), onAttempt: openAttempt, onTiming: (task: Task, runId: string) => readJson(API + '/tracking/timing?id=' + encodeURIComponent(active.id) + '&task=' + encodeURIComponent(task.taskId) + '&run=' + encodeURIComponent(runId)) });
+  if (detail) return h(DetailView, { data: detail, selected: selectedIds.includes(active.id), error, busy: busy ? dict.loading : '', onBack: () => { version.current++; setDetail(null); setActive(null); setError(''); }, onToggle: () => toggleAnalysis(active.id), onAttempt: openAttempt, onTimings: (items: TimingItem[]) => readJson(API + '/tracking/timings', { method: 'POST', body: JSON.stringify({ id: active.id, items }) }) });
   const visible = runs.filter(run => showArchived ? run.archived : !run.archived);
   return h('div', { className: 'ageval-tracking' },
     h('div', { className: 'ageval-tracking-toolbar' },
@@ -917,6 +961,9 @@ function App({ ctx, props }: { ctx: any; props: any }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [selectionOpen, setSelectionOpen] = useState(false);
+  const [removalPlan, setRemovalPlan] = useState<any>(null);
+  const [removalBusy, setRemovalBusy] = useState(false);
+  const [removalError, setRemovalError] = useState('');
   const load = useCallback(async () => {
     const version = ++loadVersion.current;
     setLoading(true); setError('');
@@ -927,20 +974,69 @@ function App({ ctx, props }: { ctx: any; props: any }) {
       setSource(src); setRoot(src?.kind === 'github' ? sourceDisplay(src) : src?.path || ''); setScope(config.scope || ''); setDraftRoot(src?.path || ''); setRecent(config.recent || []);
       setRows([]);
       const result = src ? await readJson(API + '/suites', undefined, config.scope) : { rows: [] };
-      if (version === loadVersion.current) setRows(result.rows || []);
+      if (version === loadVersion.current) {
+        const initial: Row[] = (result.rows || []).map((row: Row) => ({ ...row, updatedAtState: !row.updatedAt && src?.kind !== 'github' ? 'pending' : 'missing' }));
+        setRows(initial);
+        // Do not await optional filesystem metadata on the list's critical path.
+        if (src?.kind !== 'github') void (async () => {
+          const missing = initial.filter(row => !row.updatedAt);
+          for (let offset = 0; offset < missing.length; offset += 50) {
+            if (version !== loadVersion.current) return;
+            const items = missing.slice(offset, offset + 50).map(({ dataset, suite }) => ({ dataset, suite }));
+            const keys = new Set(items.map(row => row.dataset + '/' + row.suite));
+            setRows(prev => prev.map(row => keys.has(row.dataset + '/' + row.suite) ? { ...row, updatedAtState: 'loading' } : row));
+            try {
+              const batch = await readJson(API + '/suites/timestamps', { method: 'POST', body: JSON.stringify({ items }) }, config.scope);
+              if (version !== loadVersion.current) return;
+              const found = new Map<string, any>(batch.results.map((item: any) => [item.dataset + '/' + item.suite, item]));
+              setRows(prev => prev.map(row => {
+                const item = found.get(row.dataset + '/' + row.suite);
+                if (!keys.has(row.dataset + '/' + row.suite) || row.updatedAt) return row;
+                return { ...row, updatedAt: item?.updatedAt || null, updatedAtSource: item?.updatedAtSource || null, updatedAtState: item?.error || !item ? 'error' : 'missing', updatedAtError: item?.error || (!item ? 'Timestamp batch response missing suite' : undefined) };
+              }));
+            } catch (cause: any) {
+              if (version !== loadVersion.current) return;
+              setRows(prev => prev.map(row => keys.has(row.dataset + '/' + row.suite) && !row.updatedAt ? { ...row, updatedAtState: 'error', updatedAtError: cause.message } : row));
+            }
+          }
+        })();
+      }
     } catch (cause: any) { if (version === loadVersion.current) setError(String(cause?.message || cause)); }
     finally { if (version === loadVersion.current) setLoading(false); }
   }, []);
   useEffect(() => { injectCss(); void load(); return () => { loadVersion.current++; }; }, [load]);
   const chooseSource = async (src: DataSource) => {
+    if (removalBusy) return;
     await readJson(API + '/config', { method: 'PUT', body: JSON.stringify(src) });
-    setSourceOpen(false); setSelected({}); setDetail(null); setAttempt(null);
+    setSourceOpen(false); setSelected({}); setDetail(null); setAttempt(null); setRemovalPlan(null); setRemovalError('');
     setBench('all'); setModel('all'); setStatus('all'); setVerdict('all'); setQuery(''); setMessage('');
     await load();
   };
   const removeSavedSource = async (picked: DataSource) => {
     const config = await readJson(API + '/saved/remove', { method: 'POST', body: JSON.stringify(picked) });
     setRecent(config.recent || []);
+  };
+  const previewRemoval = async () => {
+    const version = loadVersion.current;
+    setRemovalBusy(true); setError(''); setRemovalError('');
+    try {
+      const plan = await readJson(API + '/suites/remove/preview', { method: 'POST', body: JSON.stringify({ selections: Object.values(selected).map(row => ({ dataset: row.dataset, suite: row.suite })) }) }, scope);
+      if (version === loadVersion.current) setRemovalPlan({ ...plan, scope });
+    } catch (cause: any) { if (version === loadVersion.current) setError(cause.message); }
+    finally { setRemovalBusy(false); }
+  };
+  const confirmRemoval = async () => {
+    if (!removalPlan) return;
+    setRemovalBusy(true); setRemovalError('');
+    try {
+      const result = await readJson(API + '/suites/remove/confirm', { method: 'POST', body: JSON.stringify({ token: removalPlan.token }) }, removalPlan.scope);
+      const removed = new Set(result.removed.map((item: Row) => item.dataset + '/' + item.suite));
+      setSelected(prev => Object.fromEntries(Object.entries(prev).filter(([key]) => !removed.has(key))));
+      setRows(prev => prev.filter(row => !removed.has(row.dataset + '/' + row.suite)));
+      setRemovalPlan(null); setMessage(`已移除 ${result.removed.length} 条 suite 记录，原目录已移入 suite-run-trash。`);
+      if (result.errors.length) setError(result.errors.map((item: any) => `${item.dataset}/${item.suite}: ${item.error}`).join(' · '));
+    } catch (cause: any) { setRemovalError(cause.message); }
+    finally { setRemovalBusy(false); }
   };
   const registerSelected = async () => {
     if (!source) return;
@@ -992,12 +1088,12 @@ function App({ ctx, props }: { ctx: any; props: any }) {
     h('div', { className: 'ageval-topbar' }, h('div', { className: 'ageval-heading' }, h('h2', null, 'ageval · 追踪中'), h('span', { className: 'ageval-meta' }, '只读实验数据'), h(ActionIcon, { glyph: BrowseIcon, label: '浏览结果', onClick: () => setView('browse') }))),
     h(TrackingPanel, { ctx, props }));
   if (attempt) return h(AttemptView, { attempt, onBack: () => { setAttempt(null); setError(''); } });
-  if (detail) return h(DetailView, { data: detail, selected: Boolean(selected[detail.row.dataset + '/' + detail.row.suite]), error, busy: pending ? dict.loading : '', onBack: () => { setDetail(null); setError(''); }, onToggle: () => toggle(detail.row), onAttempt: openAttempt, onTiming: (task: Task, runId: string) => readJson(API + '/timing?dataset=' + encodeURIComponent(detail.row.dataset) + '&suite=' + encodeURIComponent(detail.row.suite) + '&task=' + encodeURIComponent(task.taskId) + '&run=' + encodeURIComponent(runId), undefined, scope) });
+  if (detail) return h(DetailView, { data: detail, selected: Boolean(selected[detail.row.dataset + '/' + detail.row.suite]), error, busy: pending ? dict.loading : '', onBack: () => { setDetail(null); setError(''); }, onToggle: () => toggle(detail.row), onAttempt: openAttempt, onTimings: (items: TimingItem[]) => readJson(API + '/timings', { method: 'POST', body: JSON.stringify({ dataset: detail.row.dataset, suite: detail.row.suite, items }) }, scope) });
   return h('div', { className: 'ageval-viewer' },
     h('div', { className: 'ageval-topbar' },
-      h('div', { className: 'ageval-heading' }, h('h2', null, dict.title), h('span', { className: 'ageval-meta' }, (loading ? dict.loading + ' · ' : '') + dict.readOnly + ' · ' + filtered.length + '/' + rows.length), h(ActionIcon, { glyph: TimeIcon, label: '追踪中', onClick: () => setView('tracking') }), h(ActionIcon, { glyph: RefreshIcon, label: dict.refresh, onClick: () => void load(), disabled: loading })),
+      h('div', { className: 'ageval-heading' }, h('h2', null, dict.title), h('span', { className: 'ageval-meta' }, (loading ? dict.loading + ' · ' : '') + (source?.kind === 'github' ? dict.readOnly : '实验只读 · 可移除 suite 记录') + ' · ' + filtered.length + '/' + rows.length), h(ActionIcon, { glyph: TimeIcon, label: '追踪中', onClick: () => setView('tracking') }), h(ActionIcon, { glyph: RefreshIcon, label: dict.refresh, onClick: () => void load(), disabled: loading })),
       h('div', { className: 'ageval-root-row' },
-        h('button', { type: 'button', className: 'ageval-source-display', onClick: () => setSourceOpen(true), title: source ? sourceDisplay(source) : undefined },
+        h('button', { type: 'button', className: 'ageval-source-display', disabled: removalBusy, onClick: () => setSourceOpen(true), title: source ? sourceDisplay(source) : undefined },
           icon(source?.kind === 'ssh' ? 'terminal' : 'grid'), h('span', null, source ? sourceDisplay(source) : '选择数据源'), icon('chevron')),
         recent.length ? h(Select, { className: 'ageval-recent-select', value: '', placeholder: '最近路径', aria: '最近路径', disabled: loading, onChange: (value: string) => { const item = recent[Number(value)]; if (item) void chooseSource(item).catch((e: Error) => setError(e.message)); }, options: recent.map((item, index) => [String(index), sourceDisplay(item)] as [string, string]) }) : null),
       h(HostInput, { className: 'ageval-search-input', icon: icon('search'), value: query, placeholder: dict.search, 'aria-label': dict.search, onChange: (event: any) => setQuery(event.target.value) }),
@@ -1013,9 +1109,17 @@ function App({ ctx, props }: { ctx: any; props: any }) {
       h('input', { className: 'ageval-control', value: question, placeholder: dict.question, onChange: (event: any) => setQuestion(event.target.value), onKeyDown: (event: any) => { if (event.key === 'Enter') { event.preventDefault(); void send('current'); } } }),
       h('div', { className: 'ageval-composer-actions' },
         h(Button, { quiet: true, onClick: () => setSelectionOpen(true), disabled: !Object.keys(selected).length }, Object.keys(selected).length + ' ' + dict.selected),
+        source && source.kind !== 'github' ? h(ActionIcon, { glyph: TrashIcon, label: '移除已选 suite 记录', disabled: loading || removalBusy || !Object.keys(selected).length || Object.keys(selected).length > 24, onClick: () => void previewRemoval() }) : null,
         h(ActionIcon, { glyph: TimeIcon, label: '登记追踪', onClick: () => void registerSelected(), disabled: loading || !Object.keys(selected).length }),
         h(ActionIcon, { glyph: SendIcon, label: dict.send, onClick: () => void send('current'), disabled: loading || !Object.keys(selected).length }),
         h(ActionIcon, { glyph: PlusIcon, label: dict.newSession + '并分析', onClick: () => void send('new'), disabled: loading || !Object.keys(selected).length }))),
+    removalPlan ? h('div', { className: 'ageval-modal-backdrop', onClick: () => { if (!removalBusy) setRemovalPlan(null); }, onKeyDown: (event: any) => { if (event.key === 'Escape' && !removalBusy) setRemovalPlan(null); } },
+      h('div', { className: 'ageval-modal', role: 'dialog', 'aria-modal': true, 'aria-label': '确认移除 suite 记录', onClick: (event: any) => event.stopPropagation() },
+        h('div', { className: 'ageval-modal-head' }, h('h3', null, `移除 ${removalPlan.items.length} 条 suite 记录？`)),
+        h('div', { className: 'ageval-delete-description' }, h('p', null, sourceDisplay(removalPlan.source)), h('p', null, '仅将以下 suite-run 目录移至同级 suite-run-trash。共享 attempt、轨迹、task 文件和追踪历史均保留。此操作不会停止进程。确认在 2 分钟后过期。')),
+        h('div', { className: 'ageval-modal-list' }, removalPlan.items.map((item: any) => h('div', { key: item.dataset + '/' + item.suite, className: 'ageval-removal-item' }, h('strong', null, item.dataset + '/' + item.suite), h('span', { className: 'ageval-meta' }, item.status), h('div', { className: 'ageval-subline', title: item.path }, item.path)))),
+        h(Banner, { error: removalError }),
+        h('div', { className: 'ageval-modal-foot' }, h(Button, { autoFocus: true, disabled: removalBusy, onClick: () => setRemovalPlan(null) }, '取消'), h(Button, { accent: true, disabled: removalBusy, onClick: () => void confirmRemoval() }, removalBusy ? '移除中…' : '确认移除')))) : null,
     sourceOpen ? h(SourcePicker, { source, recent, onChoose: chooseSource, onRemove: removeSavedSource, onClose: () => setSourceOpen(false) }) : null,
     selectionOpen ? h('div', { className: 'ageval-modal-backdrop', role: 'presentation', onClick: () => setSelectionOpen(false) }, h('div', { className: 'ageval-modal', role: 'dialog', 'aria-modal': true, onClick: (event: any) => event.stopPropagation() },
       h('div', { className: 'ageval-modal-head' }, h('h3', null, dict.selected + ' ' + dict.suites), h(Button, { quiet: true, onClick: () => setSelectionOpen(false), label: '关闭' }, '×')),

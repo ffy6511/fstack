@@ -4,7 +4,7 @@ import { execFile } from 'node:child_process';
 import { bootstrapDir, expandPath, migrateLegacyFiles, readSettings, resolveDataPaths, setDataDir, settingsPath } from './src/paths.js';
 import { EvidenceError } from './src/evidence.js';
 import { sshHosts, sshList, sshTest } from './src/remote.js';
-import { sourceState, keyOf, readSuites, readSuite, readAttempt, readTaskTiming, contextFor } from './src/sources.js';
+import { sourceState, keyOf, readSuites, readSuite, readAttempt, readTaskTiming, readTaskTimings, readSuiteFileTimes, createSuiteRemoval, contextFor } from './src/sources.js';
 
 export const name = 'ageval-viewer';
 export const inject = ['webServer', 'tools'];
@@ -38,7 +38,7 @@ function openFolder(dir) {
   });
 }
 
-export function createApi(state, login, tracking) {
+export function createApi(state, login, tracking, removal = createSuiteRemoval()) {
   return async (req, res) => {
     try {
       if (!trusted(req)) throw new EvidenceError('Local same-origin requests only', 403);
@@ -55,6 +55,7 @@ export function createApi(state, login, tracking) {
         if (route === '/tracking/remove' && req.method === 'POST') { const b = await bodyOf(req); return json(res, 200, await tracking.remove(b.id)); }
         if (route === '/tracking/archive' && req.method === 'POST') { const b = await bodyOf(req); return json(res, 200, await tracking.archive(b.id, b.archived ?? true)); }
         if (route === '/tracking/suite' && req.method === 'GET') return json(res, 200, await tracking.detail(url.searchParams.get('id')));
+        if (route === '/tracking/timings' && req.method === 'POST') { const b = await bodyOf(req); return json(res, 200, await tracking.timings(b.id, b.items)); }
         if (route === '/tracking/timing' && req.method === 'GET') return json(res, 200, await tracking.timing(url.searchParams.get('id'), url.searchParams.get('task'), url.searchParams.get('run')));
         if (route === '/tracking/attempt' && req.method === 'GET') return json(res, 200, await tracking.attempt(url.searchParams.get('id'), url.searchParams.get('task'), url.searchParams.get('run')));
         throw new EvidenceError('Tracking route not found', 404);
@@ -98,7 +99,11 @@ export function createApi(state, login, tracking) {
       const source = current.source;
       const dataset = url.searchParams.get('dataset'), suite = url.searchParams.get('suite');
       if (route === '/suites' && req.method === 'GET') return json(res, 200, { root: keyOf(source), source, readAt: new Date().toISOString(), ...await readSuites(source) });
+      if (route === '/suites/timestamps' && req.method === 'POST') { const b = await bodyOf(req); return json(res, 200, await readSuiteFileTimes(source, b.items)); }
       if (route === '/suite' && req.method === 'GET') return json(res, 200, await readSuite(source, dataset, suite));
+      if (route === '/suites/remove/preview' && req.method === 'POST') { const b = await bodyOf(req); return json(res, 200, await removal.preview(source, b.selections, current.scope)); }
+      if (route === '/suites/remove/confirm' && req.method === 'POST') { const b = await bodyOf(req); return json(res, 200, await removal.confirm(source, b.token, current.scope)); }
+      if (route === '/timings' && req.method === 'POST') { const b = await bodyOf(req); return json(res, 200, await readTaskTimings(source, b.dataset, b.suite, b.items)); }
       if (route === '/timing' && req.method === 'GET') return json(res, 200, await readTaskTiming(source, dataset, suite, url.searchParams.get('task'), url.searchParams.get('run')));
       if (route === '/attempt' && req.method === 'GET') return json(res, 200, await readAttempt(source, dataset, suite, url.searchParams.get('task'), url.searchParams.get('run')));
       if (route === '/context' && req.method === 'POST') {
@@ -121,13 +126,14 @@ export function apply(ctx) {
     for (const moved of migrateLegacyFiles()) console.log(`[ageval-viewer] Moved ${moved.key} into ${moved.to}`);
     const paths = resolveDataPaths();
     const ready = sourceState(paths.config);
+    const removal = createSuiteRemoval();
     const trackingReady = trackingStore(paths.tracking);
     // Register endpoints immediately, but do not start remote reads until restored.
     void trackingReady.then(tracking => { if (!disposed) tracking.start(); else void tracking.dispose(); }).catch(error => console.error('[ageval-viewer] Tracking restore failed:', error.message));
     const route = ctx.webServer.register({ kind: 'prefix', path: API, handler: async (req, res) => {
       let tracking;
       try { tracking = await trackingReady; } catch { /* Existing browsing remains available if history is corrupt. */ }
-      return createApi(await ready, login, tracking)(req, res);
+      return createApi(await ready, login, tracking, removal)(req, res);
     } });
     const tools = [];
     const tool = (toolName, description, parameters, execute) => tools.push(ctx.tools.register({
