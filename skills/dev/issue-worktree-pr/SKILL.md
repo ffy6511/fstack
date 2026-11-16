@@ -43,7 +43,8 @@ Companion skills (read when that step runs; do not copy their rules here):
 
 - **Issue `#N`:** `gh issue view N --repo OWNER/REPO` (canonical remote, same
   rule as `$file-github-issue`). Treat the issue body as the spec: problem,
-  non-goals, approach, acceptance.
+  non-goals, approach, acceptance. Record the digits as `ISSUE` (no `#`) for
+  the worktree name.
 - **Oral / pasted goal:** write a 5-line restatement (problem, approach,
   non-goals, acceptance, out of scope) in the reply, then proceed. Do not
   invent an issue unless the user asked.
@@ -60,20 +61,30 @@ In the **existing** clone (read-only for this step):
 3. Confirm the current checkout is **not** already this delivery worktree.
 4. Branch name: `<prefix>/<slug>` — slug from the issue title or goal, kebab,
    ASCII, ≤40 chars. Example: `#137` Feat → `feat/eval-network-reuse-attempt`.
-5. Worktree path (sibling of the repo root, never inside it):
+5. Worktree name: use `ISSUE` when the goal has a numbered issue; otherwise
+   use `<slug>`. Example: `#137` → `repo-wt-137`; an oral goal named
+   `eval-network-reuse-attempt` → `repo-wt-eval-network-reuse-attempt`.
+6. Worktree path (sibling of the repo root, never inside it):
 
 ```bash
 ROOT=$(git rev-parse --show-toplevel)
 PARENT=$(dirname "$ROOT")
 NAME=$(basename "$ROOT")
+if [ -n "${ISSUE:-}" ]; then
+  WORKTREE_SUFFIX="$ISSUE"
+else
+  WORKTREE_SUFFIX="$SLUG"
+fi
 # --no-track is required. `git worktree add -b` defaults to --track when
 # the start point is a remote-tracking branch (`$UPSTREAM/$BASE`). That sets
 # branch.$BRANCH.merge to refs/heads/$BASE, so a later bare `git push`
 # updates $BASE instead of the delivery branch.
-git worktree add --no-track -b "$BRANCH" "$PARENT/${NAME}-wt-${SLUG}" "$UPSTREAM/$BASE"
+git worktree add --no-track -b "$BRANCH" "$PARENT/${NAME}-wt-${WORKTREE_SUFFIX}" "$UPSTREAM/$BASE"
 ```
 
-If that path exists, stop and reuse or pick a new slug — do not clobber.
+If that path exists, reuse the existing worktree after confirming it is for
+this delivery; do not clobber it. For an oral goal, choose a different slug
+and recompute the path.
 
 Immediately verify the new branch has **no** upstream. Run this in the new worktree and stop if it fails:
 
