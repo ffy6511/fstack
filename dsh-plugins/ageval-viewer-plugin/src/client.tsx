@@ -395,11 +395,40 @@ export function taskPage(tasks: Task[], page: number, size = 20) {
   const current = Math.min(Math.max(0, page), pages - 1);
   return { current, pages, items: tasks.slice(current * size, (current + 1) * size) };
 }
-function TaskTime({ task, runId, result, loading }: { task: Task; runId: string; result?: TimingResult; loading: boolean }) {
+function TaskTime({ task, runId, result, loading, field }: { task: Task; runId: string; result?: TimingResult; loading: boolean; field: keyof Timing }) {
   const timing = result?.timing || (runId === task.runId ? task : {});
-  return h('div', { className: 'ageval-task-time' }, hasTiming(timing)
-    ? h('span', { title: [timing.startedAt, timing.finishedAt].filter(Boolean).join(' → ') }, [timing.startedAt ? '开始 ' + formatTimestamp(timing.startedAt) : timing.finishedAt ? '完成 ' + formatTimestamp(timing.finishedAt) : null, timing.durationMs != null ? formatDuration(timing.durationMs) : null].filter(Boolean).join(' · '))
-    : h('span', { className: result?.error ? 'ageval-error-text' : undefined, title: result?.error, role: result?.error ? 'status' : undefined }, result?.error ? '时间读取失败' : result?.timing ? '摘要未记录时间' : !runId ? '尚无 attempt' : loading ? '读取时间中…' : '时间待获取'));
+  const value = timing[field];
+  if (value != null && value !== '') return field === 'durationMs'
+    ? h('span', { title: value + ' ms' }, formatDuration(value as number))
+    : h('time', { dateTime: value, title: value }, formatTimestamp(value as string));
+  return h('span', { className: result?.error ? 'ageval-error-text' : undefined, title: result?.error },
+    result?.error ? '读取失败' : !runId ? '尚无 attempt' : result?.timing || hasTiming(timing) ? '未记录' : loading ? '读取中…' : '待获取');
+}
+export function JobTable({ tasks, runs, timings, loading, onRunChange, onAttempt }: { tasks: Task[]; runs: Record<string, string>; timings: Record<string, TimingResult>; loading: boolean; onRunChange: (taskId: string, runId: string) => void; onAttempt: (task: Task, runId: string) => void }) {
+  return h('table', { className: 'ageval-suite-table ageval-job-table', 'aria-label': 'Jobs' },
+    h('colgroup', null,
+      h('col', { className: 'ageval-col-identity' }), h('col', { className: 'ageval-col-verdict' }), h('col', { className: 'ageval-col-score' }),
+      h('col', { className: 'ageval-col-attempt' }), h('col', { className: 'ageval-col-time' }), h('col', { className: 'ageval-col-time' }), h('col', { className: 'ageval-col-duration' })),
+    h('thead', null, h('tr', { className: 'ageval-suite-group-row' },
+      h('th', { scope: 'col' }, 'Task'), h('th', { scope: 'col' }, '结果'), h('th', { scope: 'col', className: 'ageval-table-score' }, '得分'), h('th', { scope: 'col' }, 'Attempt'),
+      ...['开始时间', '完成时间', '耗时'].map(label => h('th', { key: label, scope: 'col', className: 'ageval-table-time' }, h('span', { className: 'ageval-column-title' }, h(TimeIcon, { width: 14, height: 14, 'aria-hidden': true }), label))))),
+    h('tbody', null, tasks.map(task => {
+      const runId = runs[task.taskId] || task.runId || '';
+      const ids = task.runIds?.length ? task.runIds : task.runId ? [task.runId] : [];
+      return h('tr', {
+        key: task.taskId, className: 'ageval-job-row' + (runId ? ' ageval-suite-row' : ''),
+        onClick: (event: any) => { if (!runId || event.target.closest('input,select,button,label,[role="combobox"],[role="listbox"],[role="option"]')) return; onAttempt(task, runId); },
+      },
+        h('td', { className: 'ageval-table-identity' },
+          runId ? h('button', { type: 'button', className: 'ageval-suite-link', title: task.taskId, 'aria-label': '查看 ' + task.taskId + ' 的 attempt', onClick: () => onAttempt(task, runId) }, task.taskId) : h('span', { className: 'ageval-job-name', title: task.taskId }, task.taskId),
+          task.errorTitle ? h('div', { className: 'ageval-subline ageval-error-text', title: task.errorMessage || task.errorTitle }, task.errorTitle) : null),
+        h('td', null, h('span', { className: 'ageval-verdict ageval-verdict--' + verdictOf(task.status), title: task.status }, verdictOf(task.status) === 'other' ? task.status || '-' : verdictOf(task.status))),
+        h('td', { className: 'ageval-table-score' }, task.score == null ? h('span', { className: 'ageval-meta' }, '未记录') : h('span', { title: String(task.score) }, formatScore(task.score))),
+        h('td', { className: 'ageval-table-attempt' }, ids.length > 1
+          ? h(Select, { className: 'ageval-attempt-select', value: runId, aria: 'Attempt · ' + task.taskId, onChange: (value: string) => onRunChange(task.taskId, value), options: ids.map(id => [id, id] as [string, string]) })
+          : h('span', { className: 'ageval-job-run', title: runId || '尚无 attempt' }, runId || '尚无 attempt')),
+        ...(['startedAt', 'finishedAt', 'durationMs'] as const).map(field => h('td', { key: field, className: 'ageval-table-time' }, h(TaskTime, { task, runId, result: timings[timingKey(task.taskId, runId)], loading, field }))));
+    })));
 }
 export function DetailView({ data, selected, error, busy, onBack, onToggle, onAttempt, onTimings }: { data: DetailData; selected: boolean; error: string; busy: string; onBack: () => void; onToggle?: () => void; onAttempt: (task: Task, runId: string) => void; onTimings?: (items: TimingItem[]) => Promise<{ results: (TimingResult & { taskId: string; runId: string })[] }> }) {
   const [query, setQuery] = useState('');
@@ -464,19 +493,9 @@ export function DetailView({ data, selected, error, busy, onBack, onToggle, onAt
         h(Button, { disabled: paged.current === 0, onClick: () => goPage(paged.current - 1) }, '上一页'),
         h(Button, { disabled: paged.current + 1 >= paged.pages, onClick: () => goPage(paged.current + 1) }, '下一页'),
         h(ActionIcon, { glyph: RefreshIcon, label: '重新读取本页时间', disabled: timingBusy || !onTimings, onClick: () => { for (const task of paged.items) delete cache.current[timingKey(task.taskId, runs[task.taskId] || task.runId || '')]; setTimings({ ...cache.current }); setRetry(value => value + 1); } }))),
-    h('div', { className: 'ageval-detail-scroll' }, tasks.length ? paged.items.map(task => {
-      const runId = runs[task.taskId] || task.runId || '';
-      const ids = task.runIds && task.runIds.length ? task.runIds : (task.runId ? [task.runId] : []);
-      return h('div', {
-        key: task.taskId, className: 'ageval-task', role: runId ? 'button' : undefined, tabIndex: runId ? 0 : undefined,
-        onClick: (event: any) => { if (!runId || event.target.closest('input,select,button')) return; onAttempt(task, runId); },
-        onKeyDown: (event: any) => { if (!runId || event.target.closest('input,select')) return; if (event.key === 'Enter') onAttempt(task, runId); },
-      },
-        h('span', { className: 'ageval-verdict ageval-verdict--' + verdictOf(task.status) }, verdictOf(task.status) === 'other' ? (task.status || '-') : verdictOf(task.status)),
-        h('div', { className: 'ageval-task-main' }, h('div', { className: 'ageval-task-id' }, task.taskId), h(TaskTime, { key: runId, task, runId, result: timings[timingKey(task.taskId, runId)], loading: timingBusy }), task.errorTitle ? h('div', { className: 'ageval-subline ageval-error-text' }, task.errorTitle) : null),
-        task.score == null ? null : h('span', { className: 'ageval-metrics', title: String(task.score) }, formatScore(task.score)),
-        ids.length > 1 ? h(Select, { className: 'ageval-attempt-select', value: runId, aria: 'Attempt', onChange: (value: string) => setRuns(prev => ({ ...prev, [task.taskId]: value })), options: ids.map(id => [id, id] as [string, string]) }) : null);
-    }) : h('div', { className: 'ageval-empty' }, dict.noTasks)));
+    h('div', { className: 'ageval-detail-scroll ageval-jobs-scroll' }, tasks.length
+      ? h(JobTable, { tasks: paged.items, runs, timings, loading: timingBusy, onRunChange: (taskId: string, runId: string) => setRuns(prev => ({ ...prev, [taskId]: runId })), onAttempt })
+      : h('div', { className: 'ageval-empty' }, dict.noTasks)));
 }
 export function UpdatedTime({ row }: { row: Row }) {
   const state = row.updatedAtState;

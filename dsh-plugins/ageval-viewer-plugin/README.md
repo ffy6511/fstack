@@ -19,7 +19,9 @@ dsh plugin --profile web add ./dsh-plugins/ageval-viewer-plugin
 3. 点击“保存并打开”。已保存路径保留最近 12 个，可从顶部“最近路径”或数据源弹窗快速切换，然后按 bench、model、suite 筛选。
 列表在各 bench 内默认按 suite 创建时间倒序，可按创建时间、更新时间、通过率升降序或名称排序；缺失值始终排在最后。suite 创建时间与更新时间分列显示。更新时间优先用 `updated_at`，其次 `finished_at`；本机/SSH 均无声明时，在列表显示后异步分批补读 summary/progress 文件修改时间（每批最多 50 条，SSH 每批一次连接），tooltip 标明来源。补读不阻塞首屏；待获取、读取中与读取失败分别提示，刷新可重试。GitHub 不用 commit 时间冒充更新时间。
 
-task 列表每页 20 项，筛选后重新分页。自动批量补读当前页缺失的 Attempt summary 时间，SSH 每批仅建立一次连接，不下载轨迹；切页不扫描其他页，已读取结果在本次详情内复用，可点“重新读取本页时间”重试。明确区分待获取、读取中、读取失败、摘要没有记录时间和没有 attempt；不以文件修改时间或 suite 时间冒充 task 时间。
+job 页使用与 suite 页一致的表格，分列显示 Task、结果、得分、Attempt、开始时间、完成时间和耗时。表头随纵向滚动固定；窄面板可横向滚动，长名称截断并保留 tooltip。点击行或键盘激活 Task 名称打开轨迹，Attempt 列的选择器只切换 run，不触发详情跳转；没有 attempt 的 task 不提供跳转。
+
+每页 20 项，筛选后重新分页。自动批量补读当前页缺失的 Attempt summary 时间，SSH 每批仅建立一次连接，不下载轨迹；切页不扫描其他页，已读取结果在本次详情内复用，可点“重新读取本页时间”重试。开始、完成和耗时分别显示实际字段，明确区分待获取、读取中、读取失败、未记录和没有 attempt；不以文件修改时间或 suite 时间冒充 task 时间。
 
 4. 勾选 suite，输入问题后发送给当前 session，或新建一个 session 让默认 agent 分析。
 5. 点开 suite 查看 P/F/E、通过率、错误分桶和 task。点 task 打开轨迹：按用户、Agent、思考、工具、观察、终端、权限筛选，右侧细条是步骤大纲，点一下跳到那一步。`文件` tab 里是 result.json 和 summary.json。
@@ -102,4 +104,4 @@ GitHub source 固定到打开时解析出的 commit。通过本机 `gh` 读取�
 - 当前通过 DSH 的公开 session/conversation API 将只读上下文作为一条消息发送；结构化上下文 chip 仍需 composer attach 接缝，当前版本不伪装提供该能力。
 - task 详情只读取 summary 中已有的 `run_id`；若 suite 使用其他索引方式，面板只显示 suite 级摘要。
 - 本机 Attempt evidence 单文件上限 192KB；SSH 单文件上限 1MB，JSONL 在完整行边界截断。尚未提供继续加载超过上限部分的分页，不把截断轨迹当成完整证据。PASS 仍以独立评测为准。
-- 同一 task 若 summary 里有多次 attempt，行尾可以选择 run。没有 `run_id` 的 task 打不开轨迹。
+- 同一 task 若 summary 里有多次 attempt，可在 Attempt 列选择 run。没有 `run_id` 的 task 打不开轨迹。

@@ -29,14 +29,30 @@ test('job UI only batches the current page, reuses results and resets filtering 
   assert.equal(plugin.taskPage(tasks, 9).items.length, 5);
   let tree = render(props); await tick(); tree = render(props);
   assert.equal(calls.length, 1); assert.equal(calls[0].length, 20); assert.equal(calls[0][0].task, 't0');
-  assert.equal(nodes(tree).filter(n => n.props.className === 'ageval-task').length, 20);
+  assert.equal(nodes(tree).find(n => n.type === plugin.JobTable).props.tasks.length, 20);
   button(tree, '下一页').props.onClick(); tree = render(props); await tick(); tree = render(props);
   assert.equal(calls.length, 2); assert.equal(calls[1][0].task, 't20');
   button(tree, '上一页').props.onClick(); tree = render(props); await tick(); tree = render(props); assert.equal(calls.length, 2);
   button(tree, '下一页').props.onClick(); tree = render(props);
   nodes(tree).find(n => n.props['aria-label'] === '搜索 task').props.onChange({ target: { value: 't4' } }); tree = render(props); await tick(); tree = render(props);
   assert.equal(calls.length, 3); assert.equal(calls[2].length, 5); assert.equal(calls[2][0].task, 't40');
-  assert.equal(nodes(tree).filter(n => n.props.className === 'ageval-task').length, 6);
+  assert.equal(nodes(tree).find(n => n.type === plugin.JobTable).props.tasks.length, 6);
   nodes(tree).find(n => n.props.label === '重新读取本页时间').props.onClick(); render(props); await tick(); tree = render(props);
   assert.equal(calls.length, 4); assert.equal(calls[3].length, 6);
+});
+
+test('job table switches only selected attempt timing and reuses prior attempt results', async () => {
+  const { plugin, render } = await harness(); const calls = [];
+  const task = { taskId: 't', runId: 'new', runIds: ['old', 'new'], status: 'pass' };
+  const props = { data: { row: { dataset: '.', suite: 's' }, tasks: [task], errors: {} }, selected: false, error: '', busy: '', onBack() {}, onAttempt() {},
+    onTimings: async items => { calls.push(items); return { results: items.map(item => ({ taskId: item.task, runId: item.run, timing: { durationMs: item.run === 'old' ? 2000 : 1000 } })) }; } };
+  let tree = render(props); await tick(); tree = render(props);
+  const table = () => nodes(tree).find(n => n.type === plugin.JobTable);
+  assert.equal(calls.length, 1); assert.equal(calls[0][0].run, 'new');
+  assert.equal(table().props.timings[JSON.stringify(['t', 'new'])].timing.durationMs, 1000);
+  table().props.onRunChange('t', 'old'); tree = render(props); await tick(); tree = render(props);
+  assert.equal(calls.length, 2); assert.equal(calls[1].length, 1); assert.equal(calls[1][0].run, 'old');
+  assert.equal(table().props.runs.t, 'old'); assert.equal(table().props.timings[JSON.stringify(['t', 'old'])].timing.durationMs, 2000);
+  table().props.onRunChange('t', 'new'); tree = render(props); await tick(); tree = render(props);
+  assert.equal(calls.length, 2); assert.equal(table().props.runs.t, 'new');
 });

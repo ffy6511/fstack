@@ -253,8 +253,9 @@ body {
   transform: rotate(45deg);
 }
 .ageval-attempt-select {
-  flex: 0 0 110px;
-  max-width: 28%;
+  display: block;
+  width: 100%;
+  min-width: 0;
 }
 .ageval-attempt-select .ageval-select-trigger {
   font-family: var(--dsw-font-family);
@@ -1804,14 +1805,54 @@ body {
   white-space: nowrap;
   font-family: var(--dsw-font-family);
 }
-.ageval-task-time {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 8px;
-  margin-top: 3px;
+.ageval-jobs-scroll {
+  padding: 0 0 12px;
+}
+.ageval-job-table {
+  min-width: 1080px;
+}
+.ageval-job-table .ageval-col-identity {
+  width: auto;
+}
+.ageval-col-verdict {
+  width: 88px;
+}
+.ageval-col-score {
+  width: 80px;
+}
+.ageval-col-attempt {
+  width: 176px;
+}
+.ageval-col-duration {
+  width: 96px;
+}
+.ageval-job-table .ageval-suite-group-row th {
+  font-family: var(--dsw-font-family);
+}
+.ageval-job-table .ageval-table-score {
+  text-align: right;
+  white-space: nowrap;
+}
+.ageval-job-table .ageval-verdict {
+  display: block;
+  width: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ageval-job-name,
+.ageval-job-run {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ageval-job-name {
+  font-weight: 500;
+}
+.ageval-job-run {
   color: var(--ageval-text-secondary);
-  font: 11px/18px var(--dsw-font-family);
+  font-size: 11px;
 }
 .ageval-source-display,
 .ageval-chip,
