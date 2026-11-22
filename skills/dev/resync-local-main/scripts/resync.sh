@@ -6,6 +6,10 @@
 
 set -euo pipefail
 
+script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=replay.sh
+source "${script_dir}/replay.sh"
+
 usage() {
   cat <<'EOF'
 用法: resync.sh [基线] [--dry-run] [-u|--include-untracked]
@@ -85,17 +89,17 @@ if [ -n "$(git status --porcelain)" ]; then
 fi
 
 
-count=$(git rev-list --count "${base}..HEAD")
-merges=$(git rev-list --merges --count "${base}..HEAD")
-echo "本地领先 ${count} 个提交，开始 rebase 到 ${base}"
-[ "${merges}" -gt 0 ] && echo "注意：范围里有 ${merges} 个 merge 提交，rebase 会压平它们"
+count=$(git rev-list --count "${base}..${backup}")
+merges=$(git rev-list --merges --count "${base}..${backup}")
+[ "${merges}" -gt 0 ] && die "范围里有 ${merges} 个 merge 提交，不压平。备份：${backup}"
+echo "本地领先 ${count} 个提交，重放成最新提交，接到 ${base}"
 
-if ! git rebase "${base}"; then
+git reset --hard "${base}"
+# shellcheck disable=SC2086
+if ! replay_commits . $(git rev-list --reverse "${base}..${backup}"); then
   echo >&2
-  echo "rebase 中断，冲突文件：" >&2
-  git diff --name-only --diff-filter=U >&2 || true
-  echo "解决后：git rebase --continue" >&2
-  echo "放弃并回到原状：git rebase --abort && git reset --hard ${backup}" >&2
+  echo "重放中断。解决冲突后用原作者 git commit，再按上面列出的剩余提交继续。" >&2
+  echo "放弃并回到原状：git reset --hard ${backup}" >&2
   [ "${stashed}" = 1 ] && echo "stash 还留着：git stash list" >&2
   exit 3
 fi
