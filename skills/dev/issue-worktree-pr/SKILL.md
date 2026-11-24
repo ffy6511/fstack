@@ -4,7 +4,8 @@ description: >
   Deliver a GitHub issue or an oral goal from a clean $BASE (user-named
   branch else main) via a new branch
   and git worktree: phase commits, optional trim, subagent acceptance, local
-  CI-equivalent, then a draft PR into $BASE (English). Invoke with
+  CI-equivalent, a close footer on the last commit when delivering an issue,
+  then a draft PR into $BASE (English). Invoke with
   /issue-worktree-pr or $issue-worktree-pr. Manual only — do not auto-run on
   generic "implement this", "open a PR", or "work on #N" requests. Do not
   implement on a dirty primary checkout. Do not merge the PR.
@@ -34,7 +35,8 @@ Companion skills (read when that step runs; do not copy their rules here):
 - Branch prefix from issue **kind**: `feat/` · `fix/` (Bug/Fix) · `docs/` ·
   `chore/`. Default `feat/` if unclear.
 - PR: `--draft`, `--base "$BASE"`, **English** title and body. `gh pr create --draft --base "$BASE"` (same as nightly-hardening). `Closes #N` only
-  when delivering a numbered issue.
+  when delivering a numbered issue — in the PR body **and** as a footer on the
+  branch's **last commit** (step 7).
 - Do not merge, tag, rebase-onto-base, or force-push.
 
 ## Workflow
@@ -158,7 +160,65 @@ numbers if the target repo forbids that.
 
 Failing CI-equivalent → fix in the worktree, do not open the PR.
 
-### 7. Draft PR
+### 7. Close marker on the last commit (numbered issue only)
+
+GitHub reads closing keywords from **commit messages** when the commit lands
+on the default branch (rebase-merge, fast-forward, or a direct push). The PR
+body alone only closes on merge-commit / squash. So for a numbered issue, the
+**last** commit of the branch must carry a closing footer before the push in
+step 8:
+
+```
+fix(parser): reject empty tool name
+
+Closes #137
+```
+
+Run this in the worktree with `ISSUE` set. The commit rewrite is bounded: it
+amends only the branch tip, and only before that tip was pushed.
+
+```bash
+test "$(git rev-list --count "$UPSTREAM/$BASE"..HEAD)" -ge 1   # never amend the base commit
+msg=$(git log -1 --format=%B)
+if printf '%s\n' "$msg" | grep -Eiq "(closes?|closed|fix(e[sd])?|resolves?|resolved)[[:space:]]+#?${ISSUE}([^0-9]|$)"; then
+  echo "close marker present"
+else
+  tmp=$(git rev-parse --git-dir)/ISSUE_CLOSE_FOOTER
+  printf '%s\n\nCloses #%s\n' "${msg%$'\n'}" "$ISSUE" > "$tmp"
+  git commit --amend -F "$tmp"
+  rm -f "$tmp"
+fi
+git log -1 --format=%B        # must end with "Closes #<N>"
+git rev-list -1 HEAD          # changed: amend rewrote the tip
+```
+
+Also scan the whole branch before pushing — a stray closing keyword anywhere
+will auto-close that issue once the commits land on `$BASE`:
+
+```bash
+git log --format=%B "$UPSTREAM/$BASE"..HEAD \
+  | grep -Eio "(closes?|closed|fix(e[sd])?|resolves?|resolved)[[:space:]]+#?[0-9]+" \
+  | grep -Eiv "#?${ISSUE}\$" || true
+```
+
+Empty output is the expected result. Anything printed closes a different issue
+— confirm it is intended (a genuine cross-reference) or fix it by amending
+before the push. Do not push with an unintended close marker.
+
+Rules:
+
+- Footer goes on the **last** commit only. Do not spray `Closes` across every
+  phase commit, and do not create an empty commit to hold it.
+- Append, never replace: keep the original subject and body, add one blank
+  line, then the footer. A message that already closes a **different** issue
+  is handled by the check above, not by stacking a second footer on top.
+- Amend **before** the push. If the tip is already pushed, do not amend and do
+  not force-push — report the added footer as a follow-up instead.
+- Oral goals: skip this step entirely; no `Closes` in the commit or the PR.
+- The PR body still carries `Closes #N` (step 8), so the merge-commit and
+  squash paths close the issue too.
+
+### 8. Draft PR
 
 Push with an explicit destination ref. A bare `git push`, or `git push "$UPSTREAM"`, follows `branch.$BRANCH.merge` and will update `$BASE` when that config is wrong.
 
@@ -204,4 +264,5 @@ Omit `Closes` for oral goals. Reply with the PR URL. Do not merge.
 - PASS / product verdicts stay whatever the target repo already owns.
 - Do not push from the user's primary dirty checkout.
 - Do not delete the worktree unless the user asks.
-- The delivery branch must not track `$UPSTREAM/$BASE`. `git worktree add -b` against a remote-tracking start point tracks that start point unless `--no-track` is passed. After create, `@{upstream}` must be empty. After the step-7 push, it must be `$UPSTREAM/$BRANCH`. A bare `git push` is forbidden for the whole pipeline.
+- The delivery branch must not track `$UPSTREAM/$BASE`. `git worktree add -b` against a remote-tracking start point tracks that start point unless `--no-track` is passed. After create, `@{upstream}` must be empty. After the step-8 push, it must be `$UPSTREAM/$BRANCH`. A bare `git push` is forbidden for the whole pipeline.
+- A numbered issue's close marker lives on the branch tip as a `<keyword> #N` footer, added by amend before the push (step 7). Only the tip; never rewrite pushed commits to add it.
