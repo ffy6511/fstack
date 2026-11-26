@@ -1,0 +1,6 @@
+interface:
+  display_name: 'Reframe'
+  short_description: 'Give the expert terms for what is being built, then rewrite the description'
+  default_prompt: 'Use $reframe: give me the expert terms for <what I am building> and rewrite my description with them'
+policy:
+  allow_implicit_invocation: false

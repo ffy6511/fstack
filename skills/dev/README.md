@@ -22,5 +22,7 @@
 | [`reorganize-commits`](reorganize-commits/SKILL.md)       | 把当前分支上未推送的提交和工作区未提交的改动当成一个整体，按意图重排成若干提交；重排前后内容逐字节一致，不 push。                                                                                                                            |
 | [`handoff`](handoff/SKILL.md)                             | 用户显式要求交接时，把进度、决策和下一步写成交接文档；不自动触发；默认写 OS 临时目录并按项目分目录，也能从文档恢复并重建任务。                                                                                                               |
 | [`zoom-levels`](zoom-levels/SKILL.md)                     | 用户点名「分层写」「要点式」时，回复先一段总述给结论，再按分点展开；每个分点首句是可独立阅读的总结句，最深两层。                                                                                                                             |
+| [`reframe`](reframe/SKILL.md)                             | 用户说不出自己要什么时，先给 8 到 12 个这行的专家术语（每个配真实项目的链接并逐条核实），再从 2 到 3 个解决过同构问题的邻域借词、说明类比在哪里断掉，最后用这些词重写用户的描述。只重写，不动手。上游是 [cursor/plugins](https://github.com/cursor/plugins) 的 `pstack`，pin `b7b93c3`。 |
+| [`sharpen`](sharpen/SKILL.md)                             | 用户能说清但要得不深时，先答四问：顶尖从业者会多做的一步、他们会从什么原始材料开始、用什么方法和工具、除你我之外什么能证明结果对；再按这些把提示词改深不改大，实验能定的选择让 agent 先做原型，品类偏好留给人。只重写，不动手。上游同上。 |
 
 本机这份 `file-github-issue` 给 IDE 里的 agent。Grok Bot 上的同名 skill 在 [`bots/skills/file-github-issue`](../../bots/skills/file-github-issue/SKILL.md)，两份各自维护。
