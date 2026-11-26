@@ -1,4 +1,4 @@
-import { sortSuites, formatTimestamp, formatDuration } from './display.js';
+import { sortByValue, sortSuites, timestamp, formatTimestamp, formatDuration } from './display.js';
 import { Button as HostButton, Checkbox as HostCheckbox, Input as HostInput, SegmentedControl as HostSegments, IconFolderOpenOutlineRegular as BenchIcon, IconChecklistOutlineRegular as CountsIcon, IconCheckCircleOutlineRegular as RateIcon, IconClockOutlineRegular as TimeIcon, Tooltip as HostTooltip, IconBrowseOutlineRegular as BrowseIcon, IconRefreshOutlineRegular as RefreshIcon, IconSendOutlineRegular as SendIcon, IconPlusOutlineRegular as PlusIcon, IconArchiveOutlineRegular as ArchiveIcon, IconArchiveOffOutlineRegular as RestoreIcon, IconTrashOutlineRegular as TrashIcon, Switch as HostSwitch, IconInfoOutlineRegular as InfoIcon } from '@deepseek-ai/dsh-client-ui-primitives';
 import { CustomSelect as Select } from './select';
 import { createElement as h, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -10,6 +10,12 @@ import {
 type DataSource = { kind: 'local' | 'ssh' | 'github'; path: string; host?: string; repo?: string; ref?: string; commit?: string };
 type Host = { alias: string; hostName?: string; user?: string; port?: string };
 type DirectoryEntry = { name: string; path: string };
+type DirectoryScope = 'dataset' | 'parent';
+type DirectorySubscription = {
+  id: string; source: DataSource; scope: DirectoryScope; initialized: boolean; datasets: string[];
+  scanning: boolean; stale: boolean; lastSuccess?: string; readError?: string;
+  candidateCount?: number; pending?: number; capacity?: boolean;
+};
 
 type Row = {
   dataset: string; suite: string; model?: string; harness?: string; status: string;
@@ -388,8 +394,32 @@ function AttemptView({ attempt, onBack }: { attempt: Attempt; onBack: () => void
 }
 type TimingResult = { timing?: Timing; error?: string };
 type TimingItem = { task: string; run: string };
+const jobTimeColumns = [['startedAt', '开始时间'], ['finishedAt', '完成时间'], ['durationMs', '耗时']] as const;
+type JobTimeField = 'startedAt' | 'finishedAt';
+type JobSort = `${JobTimeField}-${'asc' | 'desc'}`;
+const noAttemptOverrides: Record<string, string> = {};
 function hasTiming(value: Timing) { return Boolean(value.startedAt || value.finishedAt || value.durationMs != null); }
 function timingKey(task: string, run: string) { return JSON.stringify([task, run]); }
+function timingField(task: Task, runId: string, result: TimingResult | undefined, field: keyof Timing) {
+  if (!runId) return undefined;
+  return result?.timing?.[field] ?? (runId === task.runId ? task[field] : undefined);
+}
+function jobTime(task: Task, field: JobTimeField, runs: Record<string, string>, timings: Record<string, TimingResult>) {
+  const runId = runs[task.taskId] || task.runId || '';
+  const time = runId && timestamp(timingField(task, runId, timings[timingKey(task.taskId, runId)], field));
+  return time ? Date.parse(time) : null;
+}
+function sortButton<Column extends string>(column: Column, label: string, sort: string, onSort: (order: `${Column}-${'asc' | 'desc'}`) => void, ascFirst = false) {
+  const active = sort.startsWith(column + '-');
+  const asc = active ? sort.endsWith('-asc') : ascFirst;
+  return h('button', {
+    type: 'button',
+    className: 'ageval-sort-btn' + (active ? ' is-on' : ''),
+    title: '按' + label + '排序，再点切换方向',
+    'aria-label': '按' + label + '排序' + (active ? '，当前' + (asc ? '升序' : '降序') : ''),
+    onClick: () => onSort(column + '-' + (active ? (asc ? 'desc' : 'asc') : ascFirst ? 'asc' : 'desc')),
+  }, icon(active ? (asc ? 'arrowUp' : 'arrowDown') : 'sortArrows'));
+}
 export function taskPage(tasks: Task[], page: number, size = 20) {
   const pages = Math.max(1, Math.ceil(tasks.length / size));
   const current = Math.min(Math.max(0, page), pages - 1);
@@ -397,21 +427,26 @@ export function taskPage(tasks: Task[], page: number, size = 20) {
 }
 function TaskTime({ task, runId, result, loading, field }: { task: Task; runId: string; result?: TimingResult; loading: boolean; field: keyof Timing }) {
   const timing = result?.timing || (runId === task.runId ? task : {});
-  const value = timing[field];
+  const value = timingField(task, runId, result, field);
   if (value != null && value !== '') return field === 'durationMs'
     ? h('span', { title: value + ' ms' }, formatDuration(value as number))
     : h('time', { dateTime: value, title: value }, formatTimestamp(value as string));
   return h('span', { className: result?.error ? 'ageval-error-text' : undefined, title: result?.error },
     result?.error ? '读取失败' : !runId ? '尚无 attempt' : result?.timing || hasTiming(timing) ? '未记录' : loading ? '读取中…' : '待获取');
 }
-export function JobTable({ tasks, runs, timings, loading, onRunChange, onAttempt }: { tasks: Task[]; runs: Record<string, string>; timings: Record<string, TimingResult>; loading: boolean; onRunChange: (taskId: string, runId: string) => void; onAttempt: (task: Task, runId: string) => void }) {
+export function JobTable({ tasks, runs, timings, loading, sort = '', onSort, onRunChange, onAttempt }: { tasks: Task[]; runs: Record<string, string>; timings: Record<string, TimingResult>; loading: boolean; sort?: JobSort | ''; onSort?: (order: JobSort) => void; onRunChange: (taskId: string, runId: string) => void; onAttempt: (task: Task, runId: string) => void }) {
   return h('table', { className: 'ageval-suite-table ageval-job-table', 'aria-label': 'Jobs' },
     h('colgroup', null,
       h('col', { className: 'ageval-col-identity' }), h('col', { className: 'ageval-col-verdict' }), h('col', { className: 'ageval-col-score' }),
       h('col', { className: 'ageval-col-attempt' }), h('col', { className: 'ageval-col-time' }), h('col', { className: 'ageval-col-time' }), h('col', { className: 'ageval-col-duration' })),
     h('thead', null, h('tr', { className: 'ageval-suite-group-row' },
       h('th', { scope: 'col' }, 'Task'), h('th', { scope: 'col' }, '结果'), h('th', { scope: 'col', className: 'ageval-table-score' }, '得分'), h('th', { scope: 'col' }, 'Attempt'),
-      ...['开始时间', '完成时间', '耗时'].map(label => h('th', { key: label, scope: 'col', className: 'ageval-table-time' }, h('span', { className: 'ageval-column-title' }, h(TimeIcon, { width: 14, height: 14, 'aria-hidden': true }), label))))),
+      ...jobTimeColumns.map(([field, label]) => {
+        const active = sort.startsWith(field + '-');
+        return h('th', { key: field, scope: 'col', className: 'ageval-table-time', 'aria-sort': active ? (sort.endsWith('-asc') ? 'ascending' : 'descending') : undefined },
+          h('span', { className: 'ageval-column-title' }, h(TimeIcon, { width: 14, height: 14, 'aria-hidden': true }), label,
+            field !== 'durationMs' && onSort ? sortButton(field, label, sort, onSort) : null));
+      }))),
     h('tbody', null, tasks.map(task => {
       const runId = runs[task.taskId] || task.runId || '';
       const ids = task.runIds?.length ? task.runIds : task.runId ? [task.runId] : [];
@@ -427,20 +462,22 @@ export function JobTable({ tasks, runs, timings, loading, onRunChange, onAttempt
         h('td', { className: 'ageval-table-attempt' }, ids.length > 1
           ? h(Select, { className: 'ageval-attempt-select', value: runId, aria: 'Attempt · ' + task.taskId, onChange: (value: string) => onRunChange(task.taskId, value), options: ids.map(id => [id, id] as [string, string]) })
           : h('span', { className: 'ageval-job-run', title: runId || '尚无 attempt' }, runId || '尚无 attempt')),
-        ...(['startedAt', 'finishedAt', 'durationMs'] as const).map(field => h('td', { key: field, className: 'ageval-table-time' }, h(TaskTime, { task, runId, result: timings[timingKey(task.taskId, runId)], loading, field }))));
+        ...jobTimeColumns.map(([field]) => h('td', { key: field, className: 'ageval-table-time' }, h(TaskTime, { task, runId, result: timings[timingKey(task.taskId, runId)], loading, field }))));
     })));
 }
 export function DetailView({ data, selected, error, busy, onBack, onToggle, onAttempt, onTimings }: { data: DetailData; selected: boolean; error: string; busy: string; onBack: () => void; onToggle?: () => void; onAttempt: (task: Task, runId: string) => void; onTimings?: (items: TimingItem[]) => Promise<{ results: (TimingResult & { taskId: string; runId: string })[] }> }) {
   const [query, setQuery] = useState('');
   const [verdict, setVerdict] = useState('all');
   const [bucket, setBucket] = useState('');
-  const [runs, setRuns] = useState({} as Record<string, string>);
+  const [sort, setSort] = useState<JobSort | ''>('');
+  const [runs, setRuns] = useState(noAttemptOverrides);
   const [page, setPage] = useState({ index: 0, filter: '', data }), [retry, setRetry] = useState(0);
   const [timings, setTimings] = useState({} as Record<string, TimingResult>);
   const [timingBusy, setTimingBusy] = useState(false);
   const cache = useRef({} as Record<string, TimingResult>);
+  const attemptPage = useRef<Task[] | null>(null);
   const batchReader = useRef(onTimings); batchReader.current = onTimings;
-  useEffect(() => { cache.current = {}; setTimings({}); setRuns({}); }, [data]);
+  useEffect(() => { cache.current = {}; attemptPage.current = null; setTimings({}); setRuns(noAttemptOverrides); }, [data]);
   const counts = useMemo(() => {
     const tally = { pass: 0, fail: 0, error: 0, other: 0 };
     for (const task of data.tasks) tally[verdictOf(task.status)] += 1;
@@ -451,16 +488,23 @@ export function DetailView({ data, selected, error, busy, onBack, onToggle, onAt
     const hay = (task.taskId + ' ' + (task.errorTitle || '')).toLowerCase();
     return (!needle || hay.includes(needle)) && (verdict === 'all' || verdictOf(task.status) === verdict) && (!bucket || task.errorTitle === bucket);
   }), [data.tasks, query, verdict, bucket]);
-  const filter = JSON.stringify([query, verdict, bucket]);
-  // Reset synchronously so a changed filter never fetches the previous page first.
-  const paged = taskPage(tasks, page.data === data && page.filter === filter ? page.index : 0);
+  const sortField: JobTimeField | null = sort.startsWith('startedAt-') ? 'startedAt' : sort ? 'finishedAt' : null;
+  const ordered = useMemo(() => sortField ? sortByValue(tasks, (task: Task) => jobTime(task, sortField, runs, timings), sort.endsWith('-desc')) : tasks, [tasks, sortField, sort, runs, timings]);
+  const filter = JSON.stringify([query, verdict, bucket, sort]);
+  // Reset before reading, whether the filtering or sorting changed.
+  const paged = taskPage(ordered, page.data === data && page.filter === filter ? page.index : 0);
   const goPage = (index: number) => setPage({ index, filter, data });
-  const visibleKey = JSON.stringify(paged.items.map(task => [task.taskId, runs[task.taskId] || task.runId || '']));
+  const changeSort = (next: JobSort) => { setSort(next); setPage({ index: 0, filter: JSON.stringify([query, verdict, bucket, next]), data }); };
+  // A timing response can reorder rows across pages. Only user actions and new detail trigger a read.
   useEffect(() => {
     let alive = true;
-    const items = paged.items.flatMap(task => {
+    // Switching an Attempt may move its row off this sorted page before its time can be read.
+    const visible = attemptPage.current || paged.items;
+    attemptPage.current = null;
+    const items = visible.flatMap(task => {
       const run = runs[task.taskId] || task.runId || '';
-      return run && !cache.current[timingKey(task.taskId, run)] && !hasTiming(run === task.runId ? task : {}) ? [{ task: task.taskId, run }] : [];
+      const missing = sortField ? jobTime(task, sortField, runs, {}) == null : !hasTiming(run === task.runId ? task : {});
+      return run && !cache.current[timingKey(task.taskId, run)] && missing ? [{ task: task.taskId, run }] : [];
     });
     if (!items.length || !batchReader.current) { setTimingBusy(false); return; }
     setTimingBusy(true);
@@ -475,7 +519,7 @@ export function DetailView({ data, selected, error, busy, onBack, onToggle, onAt
       setTimings({ ...cache.current });
     }).finally(() => { if (alive) setTimingBusy(false); });
     return () => { alive = false; };
-  }, [data, visibleKey, retry]);
+  }, [data, filter, paged.current, runs, retry]);
   const row = data.row;
   return h('div', { className: 'ageval-detail' },
     h('header', { className: 'ageval-detail-head' },
@@ -494,7 +538,7 @@ export function DetailView({ data, selected, error, busy, onBack, onToggle, onAt
         h(Button, { disabled: paged.current + 1 >= paged.pages, onClick: () => goPage(paged.current + 1) }, '下一页'),
         h(ActionIcon, { glyph: RefreshIcon, label: '重新读取本页时间', disabled: timingBusy || !onTimings, onClick: () => { for (const task of paged.items) delete cache.current[timingKey(task.taskId, runs[task.taskId] || task.runId || '')]; setTimings({ ...cache.current }); setRetry(value => value + 1); } }))),
     h('div', { className: 'ageval-detail-scroll ageval-jobs-scroll' }, tasks.length
-      ? h(JobTable, { tasks: paged.items, runs, timings, loading: timingBusy, onRunChange: (taskId: string, runId: string) => setRuns(prev => ({ ...prev, [taskId]: runId })), onAttempt })
+      ? h(JobTable, { tasks: paged.items, runs, timings, loading: timingBusy, sort, onSort: changeSort, onRunChange: (taskId: string, runId: string) => { attemptPage.current = paged.items; setRuns(prev => ({ ...prev, [taskId]: runId })); }, onAttempt })
       : h('div', { className: 'ageval-empty' }, dict.noTasks)));
 }
 export function UpdatedTime({ row }: { row: Row }) {
@@ -504,17 +548,7 @@ export function UpdatedTime({ row }: { row: Row }) {
   return h('time', { dateTime: row.updatedAt || undefined, title, className: state === 'error' && !row.updatedAt ? 'ageval-error-text' : undefined }, label);
 }
 function SuiteList({ rows, bench, selected, onToggle, onOpen, sort, onSort }: { rows: Row[]; bench: string; selected: Record<string, Row>; onToggle: (row: Row) => void; onOpen: (row: Row) => void; sort: string; onSort: (order: string) => void }) {
-  const sortBtn = (column: string, ascFirst: boolean, label: string) => {
-    const active = sort.startsWith(column + '-');
-    const asc = active ? sort.endsWith('-asc') : ascFirst;
-    return h('button', {
-      type: 'button',
-      className: 'ageval-sort-btn' + (active ? ' is-on' : ''),
-      title: '按' + label + '排序，再点切换方向',
-      'aria-label': '按' + label + '排序' + (active ? '，当前' + (asc ? '升序' : '降序') : ''),
-      onClick: () => onSort(column + '-' + (active ? (asc ? 'desc' : 'asc') : ascFirst ? 'asc' : 'desc')),
-    }, icon(active ? (asc ? 'arrowUp' : 'arrowDown') : 'sortArrows'));
-  };
+  const sortBtn = (column: string, ascFirst: boolean, label: string) => sortButton(column, label, sort, onSort, ascFirst);
   return h('tbody', { className: 'ageval-suite-group', 'aria-label': bench },
     h('tr', { className: 'ageval-suite-group-row' },
       h('th', { className: 'ageval-table-bench-mark', 'aria-label': 'Bench 分组' }, h(BenchIcon, { className: 'ageval-bench-icon', width: 16, height: 16, 'aria-hidden': true })),
@@ -619,13 +653,18 @@ function GitHubPicker({ source, onChoose }: { source: DataSource | null; onChoos
     h('p', { className: 'ageval-source-caption' }, '只读取已提交的轻量证据；固定到所选 commit，不克隆仓库、不下载 box 或 LFS 大文件。重新打开保存项可更新到分支最新版本。'),
     error ? h('p', { className: 'ageval-banner--error', role: 'alert' }, error) : null);
 }
-export function SourcePicker({ source, recent, onChoose, onRemove, onClose }: {
-  source: DataSource | null; recent: DataSource[]; onChoose: (s: DataSource) => Promise<void>; onRemove: (s: DataSource) => Promise<void>; onClose: () => void;
+export function SourcePicker({ source, recent, onChoose, onRemove, onClose, onSubscribe }: {
+  source: DataSource | null; recent: DataSource[]; onChoose?: (s: DataSource) => Promise<void>; onRemove?: (s: DataSource) => Promise<void>; onClose: () => void;
+  onSubscribe?: (s: DataSource, scope: DirectoryScope) => Promise<void>;
 }) {
-  const [mode, setMode] = useState<'local' | 'ssh' | 'github' | 'saved'>(source?.kind || 'local');
+  const [mode, setMode] = useState<'local' | 'ssh' | 'github' | 'saved'>(onSubscribe && source?.kind === 'github' ? 'local' : source?.kind || 'local');
+  const [scope, setScope] = useState<DirectoryScope>('dataset');
+  const tabs = ([['local', '本机'], ['ssh', 'SSH 服务器'], ['github', 'GitHub'], ['saved', '已保存路径']] as const).filter(([id]) => !onSubscribe || id !== 'github');
+  const saved = onSubscribe ? recent.filter(item => item.kind !== 'github') : recent;
+  const commitLabel = onSubscribe ? '订阅此目录' : '保存并打开';
   const [hosts, setHosts] = useState<Host[]>([]);
   const [host, setHost] = useState(source?.host || '');
-  const [path, setPath] = useState(source?.path || '');
+  const [path, setPath] = useState(onSubscribe && source?.kind === 'github' ? '' : source?.path || '');
   const [listing, setListing] = useState<{ path: string; entries: DirectoryEntry[]; truncated?: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState('');
@@ -638,6 +677,7 @@ export function SourcePicker({ source, recent, onChoose, onRemove, onClose }: {
   }, []);
   const browse = async (alias: string, location?: string) => {
     const request = ++sequence.current;
+    if (alias !== host) setPath('');
     setHost(alias); setBusy(true); setFailure(''); setListing(null);
     try {
       const home = location ? null : await readJson(API + '/ssh/test', { method: 'POST', body: JSON.stringify({ host: alias }) });
@@ -648,26 +688,29 @@ export function SourcePicker({ source, recent, onChoose, onRemove, onClose }: {
   };
   const choose = async (picked: DataSource) => {
     setBusy(true); setFailure('');
-    try { await onChoose(picked); } catch (error: any) { setFailure(error.message); } finally { setBusy(false); }
+    try { if (onSubscribe) await onSubscribe(picked, scope); else await onChoose?.(picked); } catch (error: any) { setFailure(error.message); } finally { setBusy(false); }
   };
   const removeSaved = async (picked: DataSource) => {
     setBusy(true); setFailure('');
-    try { await onRemove(picked); } catch (error: any) { setFailure(error.message); }
+    try { await onRemove?.(picked); } catch (error: any) { setFailure(error.message); }
     finally { setBusy(false); }
   };
   return h('dialog', { ref: dialog, className: 'ageval-source-dialog', 'aria-labelledby': 'ageval-source-title', onCancel: onClose },
-    h('div', { className: 'ageval-modal-head' }, h('h3', { id: 'ageval-source-title' }, '选择数据源'), h(Button, { quiet: true, onClick: onClose, label: '关闭' }, '×')),
+    h('div', { className: 'ageval-modal-head' }, h('h3', { id: 'ageval-source-title' }, onSubscribe ? '订阅追踪目录' : '选择数据源'), h(Button, { quiet: true, onClick: onClose, label: '关闭' }, '×')),
+    onSubscribe ? h('div', { className: 'ageval-subscription-scope' },
+      h(HostSegments, { id: 'ageval-subscription-scope', label: '目录追踪范围', value: scope, disabled: busy, onChange: (value: DirectoryScope) => setScope(value), options: [{ value: 'dataset', label: '单个 dataset' }, { value: 'parent', label: '父目录' }] }),
+      h('p', { className: 'ageval-source-caption' }, scope === 'parent' ? '发现此目录下的直属 dataset，包括以后新增的 dataset。' : '只发现此目录中的 suite run，不扫描同级目录。')) : null,
     h('div', { className: 'ageval-source-tabs', role: 'tablist', 'aria-label': '数据源分组' },
-      ...([['local', '本机'], ['ssh', 'SSH 服务器'], ['github', 'GitHub'], ['saved', '已保存路径']] as const).map(([id, label]) => h('button', {
+      ...tabs.map(([id, label]) => h('button', {
         key: id, id: `ageval-source-tab-${id}`, type: 'button', role: 'tab',
         className: 'ageval-tab' + (mode === id ? ' ageval-tab--on' : ''),
         'aria-selected': mode === id, 'aria-controls': 'ageval-source-panel', tabIndex: mode === id ? 0 : -1,
         disabled: busy,
-        onClick: () => { sequence.current++; setMode(id); setPath(source?.kind === id ? source.path : ''); setFailure(''); setListing(null); },
+        onClick: () => { sequence.current++; setMode(id); setPath(source?.kind === id ? source.path : ''); if (id === 'ssh') setHost(source?.host || ''); setFailure(''); setListing(null); },
         onKeyDown: (event: any) => {
           if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
           event.preventDefault();
-          const ids = ['local', 'ssh', 'github', 'saved'] as const;
+          const ids = tabs.map(([tabId]) => tabId);
           const index = ids.indexOf(mode);
           const next = event.key === 'Home' ? 0 : event.key === 'End' ? ids.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : ids.length - 1)) % ids.length;
           document.getElementById(`ageval-source-tab-${ids[next]}`)?.click();
@@ -676,35 +719,35 @@ export function SourcePicker({ source, recent, onChoose, onRemove, onClose }: {
       }, label))),
     h('div', { id: 'ageval-source-panel', role: 'tabpanel', 'aria-labelledby': `ageval-source-tab-${mode}` },
     mode === 'saved' ? h('div', { className: 'ageval-saved-paths' },
-      h('p', { className: 'ageval-source-caption' }, '删除只移除保存记录，不删除文件，也不中断当前数据源。'),
-      recent.length ? recent.map(item => h('div', { key: sourceDisplay(item), className: 'ageval-saved-path-row' },
+      h('p', { className: 'ageval-source-caption' }, onSubscribe ? '订阅不会切换当前浏览的数据源。' : '删除只移除保存记录，不删除文件，也不中断当前数据源。'),
+      saved.length ? saved.map(item => h('div', { key: sourceDisplay(item), className: 'ageval-saved-path-row' },
         h('button', { type: 'button', className: 'ageval-saved-path-open', disabled: busy, onClick: () => void choose(item), title: sourceDisplay(item) },
           icon(item.kind === 'ssh' ? 'terminal' : 'grid'),
           h('span', { className: 'ageval-saved-path-info' }, h('span', { className: 'ageval-saved-path-name' }, item.kind === 'github' ? item.repo : item.kind === 'ssh' ? item.host : '本机'), h('span', { className: 'ageval-saved-path-location' }, item.path))),
-        h('button', { type: 'button', className: 'ageval-saved-path-remove', disabled: busy, 'aria-label': `删除保存记录：${sourceDisplay(item)}`, title: '仅删除此保存记录', onClick: (event: any) => { event.stopPropagation(); void removeSaved(item); } }, '删除记录')))
+        !onSubscribe && onRemove ? h('button', { type: 'button', className: 'ageval-saved-path-remove', disabled: busy, 'aria-label': `删除保存记录：${sourceDisplay(item)}`, title: '仅删除此保存记录', onClick: (event: any) => { event.stopPropagation(); void removeSaved(item); } }, '删除记录') : null))
         : h('div', { className: 'ageval-empty' }, '还没有已保存路径')) :
     mode === 'github' ? h(GitHubPicker, { source, onChoose: choose }) :
     mode === 'local' ? h('div', { className: 'ageval-source-local' },
-      h('label', { htmlFor: 'ageval-local-path' }, 'Dataset 根目录'),
-      h('input', { id: 'ageval-local-path', className: 'ageval-control', value: path, placeholder: '/path/to/dataset-root', onChange: (event: any) => setPath(event.target.value) }),
-      h(Button, { accent: true, disabled: busy || !path.startsWith('/'), onClick: () => void choose({ kind: 'local', path }) }, '保存并打开')) :
+      h('label', { htmlFor: 'ageval-local-path' }, onSubscribe ? '本机目录' : 'Dataset 根目录'),
+      h('input', { id: 'ageval-local-path', className: 'ageval-control', value: path, placeholder: '/path/to/dataset-root', disabled: busy, onChange: (event: any) => setPath(event.target.value) }),
+      h(Button, { accent: true, disabled: busy || !path.startsWith('/'), onClick: () => void choose({ kind: 'local', path }) }, commitLabel)) :
       h('div', { className: 'ageval-source-ssh' },
         h('div', { className: 'ageval-host-list', 'aria-label': 'SSH Hosts' }, hosts.length ? hosts.map(item => h('button', {
           key: item.alias, type: 'button', className: `ageval-host-row${host === item.alias ? ' is-selected' : ''}`,
-          onClick: () => void browse(item.alias),
+          disabled: busy, onClick: () => void browse(item.alias),
         }, h('span', { className: 'ageval-host-name' }, item.alias), h('span', { className: 'ageval-host-meta' }, item.hostName ? `${item.user || ''}@${item.hostName}:${item.port || 22}` : 'SSH 配置'))) : h('p', { className: 'ageval-source-caption' }, '没有找到 SSH Host 别名')),
         h('div', { className: 'ageval-tree' },
           host ? h('form', { className: 'ageval-tree-location', onSubmit: (event: any) => { event.preventDefault(); void browse(host, path); } },
-            h('input', { className: 'ageval-control', value: path, 'aria-label': '远程路径', placeholder: '/home/user/datasets', onChange: (event: any) => setPath(event.target.value) }),
+            h('input', { className: 'ageval-control', value: path, 'aria-label': '远程路径', placeholder: '/home/user/datasets', disabled: busy, onChange: (event: any) => setPath(event.target.value) }),
             h('button', { type: 'submit', className: 'ageval-button', disabled: busy || !path.startsWith('/') }, '前往')) : null,
           busy ? h('div', { className: 'ageval-empty', role: 'status' }, '正在读取远程目录…') : listing ? h('div', { className: 'ageval-tree-entries' },
             listing.path !== '/' ? h('button', { type: 'button', className: 'ageval-tree-row', onClick: () => void browse(host, listing.path.replace(/\/[^/]+\/?$/, '') || '/') }, '‹ 上一级') : null,
             listing.entries.map(entry => h('button', { key: entry.path, type: 'button', className: 'ageval-tree-row', onClick: () => void browse(host, entry.path) }, icon('chevron'), entry.name)),
             !listing.entries.length ? h('p', { className: 'ageval-source-caption' }, '此目录没有子目录') : null,
             listing.truncated ? h('p', { className: 'ageval-source-caption' }, '仅显示前 500 个目录，可输入路径继续') : null) : h('div', { className: 'ageval-empty' }, '选择 Host 后逐层浏览目录'),
-          listing && !busy ? h(Button, { accent: true, onClick: () => void choose({ kind: 'ssh', host, path: listing.path }) }, '保存并打开此目录') : null))),
+          !busy && (onSubscribe ? host && path.startsWith('/') : listing) ? h(Button, { accent: true, onClick: () => void choose({ kind: 'ssh', host, path: onSubscribe ? path : listing!.path }) }, onSubscribe ? commitLabel : '保存并打开此目录') : null))),
     failure ? h('p', { className: 'ageval-banner ageval-banner--error', role: 'alert' }, failure) : null,
-    h('div', { className: 'ageval-modal-foot' }, h('span', { className: 'ageval-source-caption' }, '只读 · 按需读取证据，不同步工作区'), h(Button, { onClick: onClose }, '取消')));
+    h('div', { className: 'ageval-modal-foot' }, h('span', { className: 'ageval-source-caption' }, onSubscribe ? '首次跳过已结束的 run · 之后自动发现新 run' : '只读 · 按需读取证据，不同步工作区'), h(Button, { onClick: onClose }, '取消')));
 }
 type CacheInfo = { storage: 'memory'; entries: number; bytes: number; maxEntries: number; maxBytes: number; diskPath: null };
 function formatBytes(bytes: number): string {
@@ -806,11 +849,27 @@ function deltaLabel(delta: any): string {
   const signed = (n: number | null) => n == null ? '—' : (n >= 0 ? '+' : '') + n;
   return `净变化 P ${signed(delta.pass)} / F ${signed(delta.fail)} / E ${signed(delta.error)}`;
 }
-export function TrackingTable({ runs, selectedIds, sending, busy, onToggle, onOpen, onRefresh, onArchive, onStage, onAutoUpdate, onRemove, onInfo, infoId, expanded, label, setLabel, onCheckpoint }: any) {
+function serverLabel(source: DataSource): string {
+  return source.kind === 'ssh' ? source.host || 'SSH' : source.kind === 'github' ? `GitHub · ${source.repo}` : '本机';
+}
+export function trackingGroups(runs: any[]) {
+  const servers = new Map<string, { label: string; datasets: Map<string, { label: string; path: string; runs: any[] }> }>();
+  for (const run of runs) {
+    const source: DataSource = run.source;
+    const server = JSON.stringify([source.kind, source.host || source.repo || '']);
+    const path = run.dataset === '.' ? source.path : `${source.path.replace(/\/$/, '')}/${run.dataset}`;
+    const key = JSON.stringify([path, source.ref || '', source.commit || '']);
+    if (!servers.has(server)) servers.set(server, { label: serverLabel(source), datasets: new Map() });
+    const datasets = servers.get(server)!.datasets;
+    if (!datasets.has(key)) datasets.set(key, { label: benchLabel(run.dataset, path), path, runs: [] });
+    datasets.get(key)!.runs.push(run);
+  }
+  return [...servers];
+}
+export function TrackingTable({ runs, grouped = false, selectedIds, sending, busy, onToggle, onOpen, onRefresh, onArchive, onStage, onAutoUpdate, onRemove, onInfo, infoId, expanded, label, setLabel, onCheckpoint }: any) {
   const heading = (glyph: any, text: string) => h('span', { className: 'ageval-column-title' }, h(glyph, { width: 14, height: 14, 'aria-hidden': true }), text);
-  return h('table', { className: 'ageval-suite-table ageval-tracking-table', 'aria-label': '追踪实验阶段进度' },
-    h('colgroup', null, h('col', { className: 'ageval-col-check' }), h('col'), h('col', { className: 'ageval-col-rate' }), h('col', { className: 'ageval-col-counts' }), h('col', { className: 'ageval-col-delta' }), h('col', { className: 'ageval-col-time' }), h('col', { className: 'ageval-col-actions' })),
-    ...runs.map((run: any) => {
+  const groupRow = (key: string, label: string, path?: string) => h('tbody', { key }, h('tr', { className: 'ageval-tracking-scope-row' + (path ? ' ageval-tracking-dataset-row' : '') }, h('th', { colSpan: 7, title: path }, label)));
+  const renderRun = (run: any) => {
       const stages = [...run.stages];
       const last = stages.at(-1);
       if (!run.suppressLatestPreview && run.latest && (!last || last.row && JSON.stringify([last.row, last.revision]) !== JSON.stringify([run.latest.row, run.latest.revision]))) stages.push({ ...run.latest, label: '当前观测', preview: true });
@@ -823,14 +882,14 @@ export function TrackingTable({ runs, selectedIds, sending, busy, onToggle, onOp
           h('th', { scope: 'col', className: 'ageval-table-delta' }, 'ΔP / ΔF / ΔE'),
           h('th', { scope: 'col', className: 'ageval-table-time' }, heading(TimeIcon, '采样时间')),
           h('th', { className: 'ageval-table-actions' }, h('div', { className: 'ageval-floating-actions', role: 'group', 'aria-label': 'Suite 追踪操作' },
-            h(HostTooltip, { label: '自动更新追踪记录', side: 'top', portal: true }, h('span', { className: 'ageval-auto-switch' }, h(HostSwitch, { checked: run.autoUpdate !== false, disabled: Boolean(busy), label: '自动更新追踪记录', onChange: (enabled: boolean) => onAutoUpdate(run.id, enabled) }))),
+            h(HostTooltip, { label: '自动更新追踪记录', side: 'top', portal: true }, h('span', { className: 'ageval-auto-switch' }, h(HostSwitch, { checked: run.autoUpdate !== false && !run.subscriptionInactive, disabled: Boolean(busy) || run.subscriptionInactive, label: '自动更新追踪记录', onChange: (enabled: boolean) => onAutoUpdate(run.id, enabled) }))),
             h(ActionIcon, { glyph: RefreshIcon, label: '刷新并记录本次结果', disabled: Boolean(busy), onClick: () => onRefresh(run.id) }),
             h(ActionIcon, { glyph: PlusIcon, label: '记录命名阶段', disabled: Boolean(busy), onClick: () => onStage(run.id) }),
             h(ActionIcon, { glyph: InfoIcon, label: '查看来源与采样设置', onClick: () => onInfo(run.id) }),
             h(ActionIcon, { glyph: run.archived ? RestoreIcon : ArchiveIcon, label: run.archived ? '恢复追踪' : '归档（不停止实验）', disabled: Boolean(busy), onClick: () => onArchive(run) })))),
         infoId === run.id ? h('tr', null, h('td', { colSpan: 7 }, h('dl', { className: 'ageval-run-details' },
           h('dt', null, '数据源'), h('dd', null, sourceDisplay(run.source)), h('dt', null, 'Suite'), h('dd', null, run.dataset + '/' + run.suite),
-          h('dt', null, '采样方式'), h('dd', null, run.autoUpdate === false ? '仅手动刷新' : '自动更新 · ' + run.refreshSeconds + ' 秒'),
+          h('dt', null, '采样方式'), h('dd', null, run.subscriptionInactive ? '目录订阅已取消 · 仅手动刷新' : run.autoUpdate === false ? '仅手动刷新' : '自动更新 · ' + run.refreshSeconds + ' 秒'),
           h('dt', null, '最近读取'), h('dd', null, timeLabel(run.lastSuccess)), h('dt', null, '证据状态'), h('dd', null, run.readError || run.latest?.row?.status || '等待证据'),
           h('dt', null, '存活检查'), h('dd', null, '未验证')))) : null,
         ...stages.map((stage: any, index: number) => {
@@ -850,23 +909,46 @@ export function TrackingTable({ runs, selectedIds, sending, busy, onToggle, onOp
         expanded === run.id ? h('tr', null, h('td', null), h('td', { colSpan: 6 }, h('form', { className: 'ageval-stage-form', onSubmit: (event: any) => { event.preventDefault(); onCheckpoint(run.id); } },
           h('input', { className: 'ageval-control', value: label, maxLength: 120, placeholder: '阶段名称（可选）', 'aria-label': '阶段名称', onChange: (event: any) => setLabel(event.target.value) }),
           h(ActionIcon, { glyph: PlusIcon, label: '保存阶段检查点', type: 'submit', disabled: Boolean(busy) })))) : null);
+  };
+  const bodies = grouped ? trackingGroups(runs).flatMap(([server, group]) => [groupRow(server, group.label), ...[...group.datasets].flatMap(([key, dataset]) => [groupRow(server + key, dataset.label, dataset.path), ...dataset.runs.map(renderRun)])]) : runs.map(renderRun);
+  return h('table', { className: 'ageval-suite-table ageval-tracking-table', 'aria-label': '追踪实验阶段进度' },
+    h('colgroup', null, h('col', { className: 'ageval-col-check' }), h('col'), h('col', { className: 'ageval-col-rate' }), h('col', { className: 'ageval-col-counts' }), h('col', { className: 'ageval-col-delta' }), h('col', { className: 'ageval-col-time' }), h('col', { className: 'ageval-col-actions' })), ...bodies);
+}
+function SubscriptionList({ subscriptions, busy, onScan, onRemove }: { subscriptions: DirectorySubscription[]; busy: string; onScan: (id: string) => void; onRemove: (sub: DirectorySubscription) => void }) {
+  if (!subscriptions.length) return null;
+  return h('details', { className: 'ageval-subscriptions', open: true },
+    h('summary', null, `目录订阅 · ${subscriptions.length}`),
+    ...subscriptions.map(sub => {
+      const state = sub.readError ? (sub.stale ? '数据已过期 · ' : '扫描失败 · ') + sub.readError : sub.scanning ? '扫描中…' : !sub.initialized ? '等待首次扫描…' :
+        `${sub.datasets.length} 个 dataset · ${sub.candidateCount ?? 0} 个 run${sub.pending ? ` · ${sub.capacity ? '登记已满，' : ''}待登记 ${sub.pending}` : ''}${sub.stale ? ' · 数据已过期' : ''}`;
+      return h('div', { className: 'ageval-subscription-row', key: sub.id },
+        h('div', { className: 'ageval-subscription-info' },
+          h('span', { className: 'ageval-subscription-title', title: sourceDisplay(sub.source) }, sourceDisplay(sub.source)),
+          h('span', { className: 'ageval-source-caption' }, `${sub.scope === 'parent' ? '父目录' : '单个 dataset'} · ${state}${sub.lastSuccess ? ` · 上次成功 ${timeLabel(sub.lastSuccess)}` : ''}`)),
+        h(ActionIcon, { glyph: RefreshIcon, label: '立即扫描此目录', disabled: Boolean(busy) || sub.scanning, onClick: () => onScan(sub.id) }),
+        h(ActionIcon, { glyph: TrashIcon, label: '取消目录订阅', disabled: Boolean(busy), onClick: () => onRemove(sub) }));
     }));
 }
-export function TrackingPanel({ ctx, props }: { ctx: any; props: any }) {
+export function TrackingPanel({ ctx, props, source = null, recent = [] }: { ctx: any; props: any; source?: DataSource | null; recent?: DataSource[] }) {
   const [selectedIds, setSelectedIds] = useState<string[]>([]), [question, setQuestion] = useState('');
   const [sending, setSending] = useState(false), [message, setMessage] = useState('');
   const [selectionOpen, setSelectionOpen] = useState(false);
   const [runs, setRuns] = useState<any[]>([]), [showArchived, setShowArchived] = useState(false);
+  const [subscriptions, setSubscriptions] = useState<DirectorySubscription[]>([]);
+  const [subscribeOpen, setSubscribeOpen] = useState(false);
+  const [removeSubscription, setRemoveSubscription] = useState<DirectorySubscription | null>(null);
   const [busy, setBusy] = useState(''), [error, setError] = useState('');
   const [active, setActive] = useState<any>(null), [detail, setDetail] = useState<DetailData | null>(null), [attempt, setAttempt] = useState<Attempt | null>(null);
   const [expanded, setExpanded] = useState(''), [label, setLabel] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
   const [infoId, setInfoId] = useState('');
-  const alive = useRef(true), version = useRef(0);
+  const alive = useRef(true), version = useRef(0), listVersion = useRef(0);
   const load = useCallback(async () => {
+    const request = ++listVersion.current;
     const result = await readJson(API + '/tracking');
-    if (alive.current) {
+    if (alive.current && request === listVersion.current) {
       setRuns(result.runs || []);
+      setSubscriptions(result.subscriptions || []);
       const valid = new Set((result.runs || []).map((run: any) => run.id));
       setSelectedIds(ids => ids.filter(id => valid.has(id)));
     }
@@ -884,6 +966,14 @@ export function TrackingPanel({ ctx, props }: { ctx: any; props: any }) {
     try { await readJson(API + '/tracking/' + route, { method: 'POST', body: JSON.stringify(body) }); await load(); return true; }
     catch (cause: any) { if (alive.current) setError(cause.message); return false; }
     finally { if (alive.current) setBusy(''); }
+  };
+  const subscribe = async (picked: DataSource, scope: DirectoryScope) => {
+    await readJson(API + '/tracking/subscriptions/add', { method: 'POST', body: JSON.stringify({ source: picked, scope }) });
+    if (alive.current) {
+      setSubscribeOpen(false);
+      setShowArchived(false);
+      try { await load(); } catch (cause: any) { if (alive.current) setError(cause.message); }
+    }
   };
   const open = async (run: any) => {
     const request = ++version.current; setBusy(run.id); setError('');
@@ -919,12 +1009,15 @@ export function TrackingPanel({ ctx, props }: { ctx: any; props: any }) {
   const visible = runs.filter(run => showArchived ? run.archived : !run.archived);
   return h('div', { className: 'ageval-tracking' },
     h('div', { className: 'ageval-tracking-toolbar' },
-      h('span', { className: 'ageval-source-caption' }, '采样记录'),
+      h('span', { className: 'ageval-source-caption' }, showArchived ? '已归档采样记录' : '采样记录'),
+      h(Button, { onClick: () => setSubscribeOpen(true), disabled: Boolean(busy) }, '订阅目录'),
       h(ActionIcon, { glyph: showArchived ? TimeIcon : ArchiveIcon, label: showArchived ? '返回追踪中' : '查看已归档', onClick: () => setShowArchived(value => !value) }),
-      h(ActionIcon, { glyph: RefreshIcon, label: busy === 'all' ? '刷新中…' : '刷新全部', disabled: Boolean(busy), onClick: () => void action('refresh', {}) })),
+      h(ActionIcon, { glyph: RefreshIcon, label: busy === 'all' ? '刷新中…' : '刷新全部 suite', disabled: Boolean(busy) || !visible.length, onClick: () => void action('refresh', {}) })),
     h(Banner, { error, message }),
-    h('div', { className: 'ageval-tracking-scroll' }, visible.length ? h(TrackingTable, {
-      runs: visible, selectedIds, sending, busy, onToggle: toggleAnalysis, onOpen: open,
+    h('div', { className: 'ageval-tracking-scroll' },
+      !showArchived ? h(SubscriptionList, { subscriptions, busy, onScan: (id: string) => void action('subscriptions/scan', { id }), onRemove: setRemoveSubscription }) : null,
+      visible.length ? h(TrackingTable, {
+      runs: visible, grouped: true, selectedIds, sending, busy, onToggle: toggleAnalysis, onOpen: open,
       onRefresh: (id: string) => void action('refresh', { id }),
       onArchive: (run: any) => void action('archive', { id: run.id, archived: !run.archived }),
       onAutoUpdate: (id: string, enabled: boolean) => void action('auto-update', { id, enabled }),
@@ -932,7 +1025,7 @@ export function TrackingPanel({ ctx, props }: { ctx: any; props: any }) {
       infoId, onInfo: (id: string) => setInfoId(value => value === id ? '' : id),
       onStage: (id: string) => { setExpanded(value => value === id ? '' : id); setLabel(''); }, expanded, label, setLabel,
       onCheckpoint: (id: string) => { void action('refresh', { id, label: label.trim(), checkpoint: true }); setLabel(''); },
-    }) : h('div', { className: 'ageval-empty' }, showArchived ? '没有已归档记录' : '暂无追踪记录。Agent 可调用 ageval_register_run 登记；也可在浏览结果中选择 suite 后点击“登记追踪”。')),
+    }) : h('div', { className: 'ageval-empty' }, showArchived ? '没有已归档记录' : subscriptions.length ? '还没有符合条件的 suite run。目录订阅会继续扫描。' : '暂无追踪记录。可订阅目录，也可在浏览结果中登记单个 suite。')),
     h('p', { className: 'ageval-tracking-note' }, '手动刷新每次保存一行；自动采样有变化时每 5 分钟保存。Δ 为净变化，进程存活未验证。'),
     h('div', { className: 'ageval-composer' },
       h('input', { className: 'ageval-control', value: question, disabled: sending, placeholder: '让 AI 分析已选追踪记录和阶段变化…', 'aria-label': '追踪记录分析问题', maxLength: 12000, onChange: (event: any) => setQuestion(event.target.value), onKeyDown: (event: any) => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); void sendAnalysis('current'); } } }),
@@ -940,6 +1033,13 @@ export function TrackingPanel({ ctx, props }: { ctx: any; props: any }) {
         h(Button, { quiet: true, disabled: !selectedIds.length, onClick: () => setSelectionOpen(true) }, `${selectedIds.length} 已选`),
         h(ActionIcon, { glyph: SendIcon, label: sending ? '发送中…' : dict.send, disabled: sending || !selectedIds.length, onClick: () => void sendAnalysis('current') }),
         h(ActionIcon, { glyph: PlusIcon, label: dict.newSession + '并分析', disabled: sending || !selectedIds.length, onClick: () => void sendAnalysis('new') }))),
+    subscribeOpen ? h(SourcePicker, { source, recent, onSubscribe: subscribe, onClose: () => setSubscribeOpen(false) }) : null,
+    removeSubscription ? h('div', { className: 'ageval-modal-backdrop', onClick: () => { if (!busy) setRemoveSubscription(null); } },
+      h('div', { className: 'ageval-modal', role: 'dialog', 'aria-modal': true, 'aria-label': '取消目录订阅', onClick: (event: any) => event.stopPropagation() },
+        h('div', { className: 'ageval-modal-head' }, h('h3', null, '取消目录订阅')),
+        h('div', { className: 'ageval-delete-description' }, `停止扫描「${sourceDisplay(removeSubscription.source)}」？已发现的 suite 和阶段历史保留。其他订阅或手动登记覆盖的 suite 仍自动采样。`),
+        h('div', { className: 'ageval-modal-foot' }, h(Button, { disabled: Boolean(busy), onClick: () => setRemoveSubscription(null) }, '返回'),
+          h(Button, { disabled: Boolean(busy), onClick: async () => { if (await action('subscriptions/remove', { id: removeSubscription.id })) setRemoveSubscription(null); } }, '确认取消订阅')))) : null,
     deleteTarget ? h('div', { className: 'ageval-modal-backdrop', onClick: () => { if (!busy) setDeleteTarget(null); } },
       h('div', { className: 'ageval-modal', role: 'dialog', 'aria-modal': true, 'aria-label': '删除这次采样记录', onClick: (event: any) => event.stopPropagation() },
         h('div', { className: 'ageval-modal-head' }, h('h3', null, '删除这次采样记录')),
@@ -1105,7 +1205,7 @@ function App({ ctx, props }: { ctx: any; props: any }) {
   const filtering = Boolean(query || bench !== 'all' || model !== 'all' || status !== 'all' || verdict !== 'all');
   if (view === 'tracking') return h('div', { className: 'ageval-viewer' },
     h('div', { className: 'ageval-topbar' }, h('div', { className: 'ageval-heading' }, h('h2', null, 'ageval · 追踪中'), h('span', { className: 'ageval-meta' }, '只读实验数据'), h(ActionIcon, { glyph: BrowseIcon, label: '浏览结果', onClick: () => setView('browse') }))),
-    h(TrackingPanel, { ctx, props }));
+    h(TrackingPanel, { ctx, props, source, recent }));
   if (attempt) return h(AttemptView, { attempt, onBack: () => { setAttempt(null); setError(''); } });
   if (detail) return h(DetailView, { data: detail, selected: Boolean(selected[detail.row.dataset + '/' + detail.row.suite]), error, busy: pending ? dict.loading : '', onBack: () => { setDetail(null); setError(''); }, onToggle: () => toggle(detail.row), onAttempt: openAttempt, onTimings: (items: TimingItem[]) => readJson(API + '/timings', { method: 'POST', body: JSON.stringify({ dataset: detail.row.dataset, suite: detail.row.suite, items }) }, scope) });
   return h('div', { className: 'ageval-viewer' },

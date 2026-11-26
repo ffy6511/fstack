@@ -13,18 +13,20 @@ export function timingOf(value = {}) {
     : startedAt && finishedAt && Date.parse(finishedAt) >= Date.parse(startedAt) ? Date.parse(finishedAt) - Date.parse(startedAt) : null;
   return { startedAt, finishedAt, durationMs };
 }
-export function sortSuites(rows, order = 'time-desc') {
-  const descending = order.endsWith('-desc');
-  const value = row => order.startsWith('rate-') ? (typeof row.passRate === 'number' && Number.isFinite(row.passRate) ? row.passRate : null)
-    : order.startsWith('updated-') ? (timestamp(row.updatedAt) ? Date.parse(row.updatedAt) : null)
-    : order.startsWith('time-') ? (timestamp(row.createdAt) ? Date.parse(row.createdAt) : null) : row.suite;
-  return [...rows].sort((a, b) => {
-    const x = value(a), y = value(b);
+export function sortByValue(rows, value, descending, tieBreak = () => 0) {
+  return rows.map(row => ({ row, value: value(row) })).sort((a, b) => {
+    const x = a.value, y = b.value;
     if (x == null && y != null) return 1;
     if (y == null && x != null) return -1;
     const comparison = x == null ? 0 : typeof x === 'number' ? x - y : String(x).localeCompare(String(y));
-    return (descending ? -comparison : comparison) || `${a.dataset}/${a.suite}`.localeCompare(`${b.dataset}/${b.suite}`);
-  });
+    return (descending ? -comparison : comparison) || tieBreak(a.row, b.row);
+  }).map(item => item.row);
+}
+export function sortSuites(rows, order = 'time-desc') {
+  const value = row => order.startsWith('rate-') ? (typeof row.passRate === 'number' && Number.isFinite(row.passRate) ? row.passRate : null)
+    : order.startsWith('updated-') ? (timestamp(row.updatedAt) ? Date.parse(row.updatedAt) : null)
+    : order.startsWith('time-') ? (timestamp(row.createdAt) ? Date.parse(row.createdAt) : null) : row.suite;
+  return sortByValue(rows, value, order.endsWith('-desc'), (a, b) => `${a.dataset}/${a.suite}`.localeCompare(`${b.dataset}/${b.suite}`));
 }
 export function formatTimestamp(value) {
   const valid = timestamp(value);

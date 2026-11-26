@@ -38,6 +38,14 @@ test('tracking table renders chronological baseline and stages in fixed aligned 
   const latest = { ...second, row: { ...row, pass: 4 } };
   const current = plugin.TrackingTable({ ...props, runs: [{ ...run, latest }] });
   assert.equal(current.children[1].children.filter(Boolean)[3].children[1].children[0].children[0], '当前观测');
+  const grouped = plugin.TrackingTable({ ...props, grouped: true, runs: [
+    { ...run, dataset: 'a', source: { kind: 'ssh', host: 'first', path: '/data' } },
+    { ...run, id: 'two', dataset: '.', source: { kind: 'ssh', host: 'first', path: '/data/a' } },
+    { ...run, id: 'three', dataset: '.', source: { kind: 'ssh', host: 'second', path: '/data/a' } },
+  ] });
+  const headings = grouped.children.slice(1).map(body => body.children[0]).filter(row => row.props.className.startsWith('ageval-tracking-scope-row'));
+  assert.deepEqual(Array.from(headings, line => line.children[0].children[0]), ['first', 'a', 'second', 'a']);
+  assert.ok(headings.every(line => line.children[0].props.colSpan === 7));
   const action = plugin.ActionIcon({ glyph: icons.IconClockOutlineRegular, label: '追踪中' });
   assert.equal(action.type, 'tooltip'); assert.equal(action.props.label, '追踪中'); assert.equal(action.children[0].props['aria-label'], '追踪中');
 });

@@ -189,7 +189,7 @@ test('Host sampler refreshes without Agent or page, skips archived and completed
 });
 
 test('tracking APIs do not depend on selected source and reject cross-origin writes', async () => {
-  const { store } = await setup({ read: async () => detail() });
+  const { store } = await setup({ read: async () => detail(), discover: async s => ({ path: s.path, datasets: ['.'], candidates: [] }) });
   const handler = createApi({ current() { throw new Error('Selected-source state must not be read'); } }, null, store);
   async function call(path, method = 'GET', body = {}, headers = {}) {
     const req = { url: '/fstack-ageval/api' + path, method, headers: { host: '127.0.0.1:1234', 'content-type': 'application/json', 'x-ageval-action': '1', ...headers }, async *[Symbol.asyncIterator]() { yield Buffer.from(JSON.stringify(body)); } };
@@ -198,6 +198,15 @@ test('tracking APIs do not depend on selected source and reject cross-origin wri
     return { status, response };
   }
   assert.equal((await call('/tracking')).status, 200);
+  const add = { source, scope: 'dataset' };
+  assert.equal((await call('/tracking/subscriptions/add', 'POST', add, { origin: 'https://evil.test' })).status, 403);
+  assert.equal((await call('/tracking/subscriptions/add', 'POST', { ...add, scope: 'recursive' })).status, 400);
+  const sub = await call('/tracking/subscriptions/add', 'POST', add);
+  assert.equal(sub.status, 200); assert.equal(sub.response.initialized, false);
+  assert.equal((await call('/tracking/subscriptions/scan', 'POST', { id: sub.response.id })).response.initialized, true);
+  assert.equal((await call('/tracking')).response.subscriptions[0].id, sub.response.id);
+  assert.equal((await call('/tracking/subscriptions/remove', 'POST', { id: sub.response.id })).status, 200);
+  assert.deepEqual((await call('/tracking')).response.subscriptions, []);
   const registered = await call('/tracking/register', 'POST', input);
   assert.equal(registered.status, 200);
   const context = await call('/tracking/context', 'POST', { ids: [registered.response.id], question: 'Analyze' });

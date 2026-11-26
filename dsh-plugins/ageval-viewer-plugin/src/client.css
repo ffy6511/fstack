@@ -1610,6 +1610,53 @@ body {
   overflow: auto;
   padding: 0 0 12px;
 }
+.ageval-subscription-scope,
+.ageval-subscriptions {
+  padding: 8px var(--ageval-inset);
+  border-bottom: 0.5px solid var(--ageval-border);
+}
+.ageval-subscription-scope {
+  display: grid;
+  gap: 6px;
+}
+.ageval-subscriptions summary {
+  min-height: 24px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.ageval-subscription-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 0;
+  border-top: 0.5px solid var(--ageval-border);
+}
+.ageval-subscription-info {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
+}
+.ageval-subscription-info > span {
+  overflow-wrap: anywhere;
+}
+.ageval-subscription-title {
+  font-size: 12px;
+  font-weight: 500;
+}
+.ageval-tracking-table .ageval-tracking-scope-row th {
+  padding: 8px var(--ageval-inset);
+  background: var(--ageval-surface-soft);
+  color: var(--ageval-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  text-align: left;
+}
+.ageval-tracking-table .ageval-tracking-dataset-row th {
+  padding-inline-start: calc(var(--ageval-inset) + 14px);
+  font-weight: 400;
+}
 .ageval-tracked-heading {
   display: flex;
   align-items: center;

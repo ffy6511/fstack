@@ -127,6 +127,85 @@ def task_timing(base, dataset, src, task, run):
     raise ValueError('Attempt summary is unavailable on this source')
 
 
+def tracking_discover(base, scope, baseline):
+    if scope not in ('dataset', 'parent') or not isinstance(baseline, bool):
+        raise ValueError('Invalid tracking discovery scope')
+    datasets, candidates = [], []
+    scanned, bytes_read = 0, 0
+
+    def is_real_dir(path):
+        try:
+            return stat.S_ISDIR(os.lstat(path).st_mode)
+        except FileNotFoundError:
+            return False
+
+    def usable(directory):
+        nonlocal scanned
+        with os.scandir(directory) as entries:
+            for entry in entries:
+                scanned += 1
+                if scanned > 20000:
+                    raise ValueError('Too many directory entries; choose a narrower directory')
+                if entry.is_dir(follow_symlinks=False) and not entry.name.startswith('.') and '\\' not in entry.name:
+                    yield entry.name
+
+    def terminal(directory):
+        nonlocal bytes_read
+        for name in ('summary.json', 'progress.json'):
+            path = os.path.join(directory, name)
+            try:
+                if not stat.S_ISREG(os.lstat(path).st_mode):
+                    continue
+                if within(base, path) != path:
+                    raise ValueError('Suite metadata path changed')
+                fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | getattr(os, 'O_NOFOLLOW', 0))
+                with os.fdopen(fd, 'rb') as handle:
+                    info = os.fstat(handle.fileno())
+                    if not stat.S_ISREG(info.st_mode):
+                        continue
+                    bytes_read += info.st_size
+                    if info.st_size > MAX_JSON or bytes_read > 128 * 1024 * 1024:
+                        raise ValueError('Baseline metadata exceeds read limit; choose a narrower directory')
+                    raw = handle.read(info.st_size)
+                try:
+                    value = json.loads(raw.decode('utf-8', 'replace'))
+                except (ValueError, RecursionError):
+                    continue
+                if isinstance(value, dict) and isinstance(value.get('status'), str) and value['status']:
+                    return value['status'] in ('complete', 'failed', 'error', 'cancelled', 'canceled', 'interrupted')
+            except FileNotFoundError:
+                continue
+        return False
+
+    def scan(dataset, directory):
+        metadata = os.path.join(directory, '.ageval')
+        suites = os.path.join(metadata, 'suite-runs')
+        has_suites = is_real_dir(metadata) and is_real_dir(suites)
+        if not has_suites and dataset != '.':
+            try:
+                if not stat.S_ISREG(os.lstat(os.path.join(directory, 'ageval.yaml')).st_mode):
+                    return
+            except FileNotFoundError:
+                return
+        if len(datasets) == 500:
+            raise ValueError('Too many datasets; choose a narrower directory')
+        datasets.append(dataset)
+        if has_suites:
+            if within(base, suites) != suites:
+                raise ValueError('Suite directory changed')
+            for suite in usable(suites):
+                if len(candidates) == 2000:
+                    raise ValueError('Too many suite runs to scan; choose a narrower directory')
+                candidates.append({'dataset': dataset, 'suite': suite, 'terminal': baseline and terminal(os.path.join(suites, suite))})
+
+    if scope == 'dataset':
+        scan('.', base)
+    else:
+        for dataset in usable(base):
+            scan(dataset, os.path.join(base, dataset))
+    return {'path': base, 'datasets': sorted(datasets), 'candidates': candidates}
+
+
 def perform():
     op = request['op']
     if op == 'home':
@@ -136,6 +215,8 @@ def perform():
     base = os.path.realpath(root)
     if not os.path.isdir(base):
         raise ValueError('Directory is unavailable')
+    if op == 'tracking_discover':
+        return tracking_discover(base, request.get('scope'), request.get('baseline'))
     if op == 'remove_preview':
         return inspect_record(base, request['dataset'], request['suite'])
     if op == 'remove_confirm':

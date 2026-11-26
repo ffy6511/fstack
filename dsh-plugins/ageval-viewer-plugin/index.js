@@ -49,6 +49,9 @@ export function createApi(state, login, tracking, removal = createSuiteRemoval()
         if (route === '/tracking' && req.method === 'GET') return json(res, 200, tracking.list());
         if (route === '/tracking/context' && req.method === 'POST') { const b = await bodyOf(req); return json(res, 200, tracking.context(b.ids, b.question ?? '')); }
         if (route === '/tracking/register' && req.method === 'POST') return json(res, 200, await tracking.register(await bodyOf(req)));
+        if (route === '/tracking/subscriptions/add' && req.method === 'POST') return json(res, 200, await tracking.subscribe(await bodyOf(req)));
+        if (route === '/tracking/subscriptions/scan' && req.method === 'POST') { const b = await bodyOf(req); return json(res, 200, await tracking.scan(b.id)); }
+        if (route === '/tracking/subscriptions/remove' && req.method === 'POST') { const b = await bodyOf(req); return json(res, 200, await tracking.unsubscribe(b.id)); }
         if (route === '/tracking/refresh' && req.method === 'POST') { const b = await bodyOf(req); return json(res, 200, b.id ? await tracking.refresh(b.id, { label: b.label, checkpoint: b.checkpoint === true }) : await tracking.refreshAll()); }
         if (route === '/tracking/auto-update' && req.method === 'POST') { const b = await bodyOf(req); return json(res, 200, await tracking.setAutoUpdate(b.id, b.enabled)); }
         if (route === '/tracking/stage/remove' && req.method === 'POST') { const b = await bodyOf(req); return json(res, 200, await tracking.removeStage(b.id, b.stageId)); }

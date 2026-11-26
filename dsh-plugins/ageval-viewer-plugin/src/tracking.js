@@ -1,13 +1,22 @@
 import { randomUUID } from 'node:crypto';
 import { readFile, writeFile, mkdir, rename, realpath } from 'node:fs/promises';
-import { dirname, isAbsolute, resolve } from 'node:path';
+import { dirname, isAbsolute, join, posix, resolve } from 'node:path';
+import { discoverDirectory, terminalStatus } from './discovery.js';
 import { EvidenceError, segment, redact } from './evidence.js';
 import { parseSource, keyOf, readSuite, readAttempt, readTaskTiming, readTaskTimings } from './sources.js';
 import { assertHost } from './remote.js';
 import { github } from './github.js';
 
 const MAX_RUNS = 100, MAX_STAGES = 48, MAX_TASKS = 20000;
+const MAX_SUBSCRIPTIONS = 24, MAX_SEEN = 20000, MAX_NEW_PER_SCAN = 12, DISCOVERY_SECONDS = 60;
 const clone = value => structuredClone(value);
+const runKey = (source, dataset, suite, followRef = false) => JSON.stringify([keyOf(source), dataset, suite, followRef]);
+function datasetSource(source, dataset) {
+  return dataset === '.' ? source : { ...source, path: (source.kind === 'ssh' ? posix.join : join)(source.path, dataset) };
+}
+function identity(source, dataset, suite, followRef = false) {
+  return source.kind === 'github' ? runKey(source, dataset, suite, followRef) : runKey(datasetSource(source, dataset), '.', suite);
+}
 const checkedText = (value, max, fallback = '') => {
   if (value == null) return fallback;
   if (typeof value !== 'string' || value.length > max || /[\x00-\x1f]/.test(value)) throw new EvidenceError('Invalid tracking text');
@@ -39,9 +48,10 @@ function delta(before, after) {
   return { comparable: true, pass: diff('pass'), fail: diff('fail'), error: diff('error'), finished: diff('finished'), transitions,
     note: 'Net counts only; task transitions cover observed task IDs. Matching evaluation settings are not verified.' };
 }
-export async function trackingStore(file, { read = readSuite, attempt = readAttempt, normalize = trackingSource, resolveGithub = source => github.resolve(source), now = () => Date.now() } = {}) {
-  let data = { version: 1, runs: [] }, queue = Promise.resolve(), disposed = false, timer;
-  const flights = new Map(), deleting = new Set();
+export async function trackingStore(file, { read = readSuite, attempt = readAttempt, normalize = trackingSource, discover = discoverDirectory, resolveGithub = source => github.resolve(source), now = () => Date.now() } = {}) {
+  let data = { version: 1, runs: [], subscriptions: [] }, queue = Promise.resolve(), disposed = false, timer, discoveryTimer;
+  const flights = new Map(), deleting = new Set(), scans = new Map();
+  const discoveryAbort = new AbortController();
   let readQueue = Promise.resolve();
   function limitedRead(fn) {
     const pending = readQueue.then(() => { if (disposed) throw new EvidenceError('Tracking service unloaded', 409); return fn(); });
@@ -52,7 +62,8 @@ export async function trackingStore(file, { read = readSuite, attempt = readAtte
     if (Buffer.byteLength(text) > 32 * 1024 * 1024) throw new Error('Tracking store exceeds limit');
     const saved = JSON.parse(text);
     if (saved.version !== 1 || !Array.isArray(saved.runs) || saved.runs.length > MAX_RUNS) throw new Error('Invalid tracking store');
-    data = saved;
+    data = { ...saved, subscriptions: saved.subscriptions ?? [] };
+    if (!Array.isArray(data.subscriptions) || data.subscriptions.length > MAX_SUBSCRIPTIONS || data.subscriptions.some(s => !Array.isArray(s.seen) || s.seen.length > MAX_SEEN)) throw new Error('Invalid tracking subscriptions');
     for (const run of data.runs) for (const [index, stage] of run.stages.entries()) stage.id ||= `legacy-${index}-${stage.at}`;
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
   function mutate(fn) {
@@ -69,11 +80,78 @@ export async function trackingStore(file, { read = readSuite, attempt = readAtte
     queue = pending.catch(() => {}); return pending;
   }
   function find(id, state = data) { const run = state.runs.find(r => r.id === id); if (!run) throw new EvidenceError('Tracked run not found', 404); return run; }
+  function subscriptionView(sub) {
+    const { seen, requestedPath, nextScanAt, failures, ...publicSub } = sub;
+    return clone({ ...publicSub, scanning: scans.has(sub.id), stale: Boolean(sub.lastSuccess && (sub.readError || now() - Date.parse(sub.lastSuccess) > DISCOVERY_SECONDS * 3000)) });
+  }
+  function makeRun({ source, dataset, suite, title = suite, reporter = '', followRef = false, refreshSeconds = DISCOVERY_SECONDS, manual = false }) {
+    return { id: randomUUID(), key: runKey(source, dataset, suite, followRef), source, dataset, suite, title, reporter, followRef, refreshSeconds, manual,
+      registeredAt: new Date(now()).toISOString(), archived: false, completed: false, observation: 'waiting', stages: [], nextReadAt: 0 };
+  }
+  const findSubscription = id => {
+    const sub = data.subscriptions.find(item => item.id === id);
+    if (!sub) throw new EvidenceError('Directory subscription not found', 404);
+    return sub;
+  };
+  function applyScan(state, sub, scan, stamp) {
+    const source = { ...sub.source, path: scan.path };
+    const seen = new Set(sub.seen);
+    const known = new Map(state.runs.map(run => [identity(run.source, run.dataset, run.suite, run.followRef), run]));
+    let added = 0, pending = 0, capacity = false;
+    for (const item of [...scan.candidates].sort((a, b) => a.dataset.localeCompare(b.dataset) || a.suite.localeCompare(b.suite))) {
+      const token = JSON.stringify([item.dataset, item.suite]);
+      const key = identity(source, item.dataset, item.suite), existing = known.get(key);
+      if (existing) existing.subscriptionIds = [...new Set([...(existing.subscriptionIds || []), sub.id])];
+      if (seen.has(token)) continue;
+      if (!existing && (sub.initialized || !item.terminal)) {
+        if (added >= MAX_NEW_PER_SCAN || state.runs.length >= MAX_RUNS) {
+          pending++;
+          capacity ||= state.runs.length >= MAX_RUNS;
+          continue;
+        }
+        const run = makeRun({ source, dataset: item.dataset, suite: item.suite });
+        run.subscriptionIds = [sub.id];
+        state.runs.push(run); known.set(key, run); added++;
+      }
+      if (seen.size >= MAX_SEEN) throw new EvidenceError('Directory history is full; narrow the subscription', 413);
+      seen.add(token);
+    }
+    Object.assign(sub, { source, initialized: true, seen: [...seen], datasets: scan.datasets, candidateCount: scan.candidates.length,
+      pending, capacity, lastSuccess: stamp, lastAttempt: stamp, readError: null, failures: 0, nextScanAt: now() + DISCOVERY_SECONDS * 1000 });
+  }
+  function scanSubscription(id) {
+    if (scans.has(id)) return scans.get(id);
+    const started = clone(findSubscription(id));
+    if (scans.size >= 4) throw new EvidenceError('Four directory scans are already running; retry shortly', 429);
+    const work = (async () => {
+      const stamp = new Date(now()).toISOString();
+      try {
+        const scan = await discover(started.source, started.scope, !started.initialized, { signal: discoveryAbort.signal });
+        if (started.initialized && scan.path !== started.source.path) throw new EvidenceError('Directory now resolves to a different path; cancel and subscribe again', 409);
+        if (!disposed && data.subscriptions.some(sub => sub.id === id)) await mutate(state => {
+          const sub = state.subscriptions.find(item => item.id === id);
+          if (sub) applyScan(state, sub, scan, stamp);
+        });
+      } catch (error) {
+        if (!disposed && data.subscriptions.some(sub => sub.id === id)) await mutate(state => {
+          const sub = state.subscriptions.find(item => item.id === id);
+          if (!sub) return;
+          sub.failures = (sub.failures || 0) + 1;
+          sub.lastAttempt = stamp;
+          sub.readError = redact(error.status ? error.message : 'Directory scan failed; check path, connectivity and permissions').slice(0, 700);
+          sub.nextScanAt = now() + Math.min(900, DISCOVERY_SECONDS * 2 ** Math.min(sub.failures - 1, 4)) * 1000;
+        });
+      }
+    })().finally(() => scans.delete(id));
+    scans.set(id, work);
+    return work;
+  }
   function view(run) {
     const { states, ...latest } = run.latest || {};
     const stages = run.stages || [];
     const { stageStates, key, ...publicRun } = run;
-    return clone({ ...publicRun, autoUpdate: run.autoUpdate !== false, latest: run.latest ? latest : null, stages, refreshing: flights.has(run.id),
+    return clone({ ...publicRun, autoUpdate: run.autoUpdate !== false, subscriptionInactive: run.manual === false && !run.subscriptionIds?.length,
+      latest: run.latest ? latest : null, stages, refreshing: flights.has(run.id),
       stale: Boolean(!run.completed && !run.archived && run.lastSuccess && now() - Date.parse(run.lastSuccess) > Math.max(run.refreshSeconds * 3, 180) * 1000),
       liveness: 'not-verified' });
   }
@@ -116,7 +194,7 @@ export async function trackingStore(file, { read = readSuite, attempt = readAtte
         const before = last ? { row: last.row, states: run.stageStates || {} } : null;
         const change = delta(before, current);
         const changed = !run.latest || JSON.stringify([run.latest.row, run.latest.states, run.latest.revision]) !== JSON.stringify([current.row, current.states, current.revision]);
-        const terminal = result.row.hasSummary && result.row.status === 'complete';
+        const terminal = terminalStatus(result.row.status) && (result.row.status !== 'complete' || result.row.hasSummary);
         const saveStage = !automatic || !last || checkpoint || label || change?.comparable === false || (changed && (terminal || now() - Date.parse(last.at) >= 300000));
         const stage = { id: randomUUID(), at: stamp, label: label || (!last ? '首次观测' : checkpoint ? '手动阶段' : !automatic ? '手动刷新' : terminal ? '完成' : '自动采样'), row: result.row, revision: current.revision, delta: change };
         if (saveStage) { run.stages.push(stage); run.stages = run.stages.length > MAX_STAGES ? [run.stages[0], ...run.stages.slice(-(MAX_STAGES - 1))] : run.stages; run.stageStates = states; }
@@ -133,7 +211,29 @@ export async function trackingStore(file, { read = readSuite, attempt = readAtte
     return view(find(id));
   }
   return {
-    list() { return { runs: data.runs.map(view), limits: { runs: MAX_RUNS, stagesPerRun: MAX_STAGES }, storagePath: file }; },
+    list() { return { runs: data.runs.map(view), subscriptions: data.subscriptions.map(subscriptionView), limits: { runs: MAX_RUNS, stagesPerRun: MAX_STAGES, subscriptions: MAX_SUBSCRIPTIONS }, storagePath: file }; },
+    async subscribe(input) {
+      if (!['dataset', 'parent'].includes(input?.scope)) throw new EvidenceError('Choose dataset or parent directory scope');
+      const source = await normalize(input.source);
+      if (!['local', 'ssh'].includes(source.kind)) throw new EvidenceError('Directory tracking supports local and SSH sources');
+      return mutate(state => {
+        const existing = state.subscriptions.find(sub => sub.scope === input.scope && (keyOf(sub.source) === keyOf(source) || (sub.requestedPath && keyOf({ ...sub.source, path: sub.requestedPath }) === keyOf(source))));
+        if (existing) return subscriptionView(existing);
+        if (state.subscriptions.length >= MAX_SUBSCRIPTIONS) throw new EvidenceError('At most 24 directory subscriptions supported', 413);
+        const sub = { id: randomUUID(), source, requestedPath: source.path, scope: input.scope, initialized: false, seen: [], datasets: [], nextScanAt: 0 };
+        state.subscriptions.push(sub);
+        return subscriptionView(sub);
+      });
+    },
+    async scan(id) { await scanSubscription(id); return subscriptionView(findSubscription(id)); },
+    unsubscribe(id) {
+      return mutate(state => {
+        if (!state.subscriptions.some(sub => sub.id === id)) throw new EvidenceError('Directory subscription not found', 404);
+        state.subscriptions = state.subscriptions.filter(sub => sub.id !== id);
+        for (const run of state.runs) if (run.subscriptionIds) run.subscriptionIds = run.subscriptionIds.filter(value => value !== id);
+        return { removed: id };
+      });
+    },
     async register(input) {
       const normalized = await normalize(input.source);
       const source = normalized.kind === 'github' && input.followRef === false && !normalized.commit ? await resolveGithub(normalized) : normalized;
@@ -142,14 +242,16 @@ export async function trackingStore(file, { read = readSuite, attempt = readAtte
       if (input.followRef != null && typeof input.followRef !== 'boolean') throw new EvidenceError('followRef must be boolean');
       const followRef = source.kind === 'github' && (input.followRef ?? !source.commit);
       const canonical = source.kind === 'github' && followRef ? { ...source, commit: undefined } : source;
-      const key = JSON.stringify([keyOf(canonical), dataset, suite, followRef]);
+      const key = identity(canonical, dataset, suite, followRef);
       const seconds = interval(input.refreshSeconds);
       const id = await mutate(state => {
-        const existing = state.runs.find(r => r.key === key);
-        if (existing) return existing.id;
+        const existing = state.runs.find(r => identity(r.source, r.dataset, r.suite, r.followRef) === key);
+        if (existing) {
+          if (existing.manual === false) Object.assign(existing, { manual: true, title, reporter, refreshSeconds: seconds });
+          return existing.id;
+        }
         if (state.runs.length >= MAX_RUNS) throw new EvidenceError('At most 100 tracked runs supported', 413);
-        const run = { id: randomUUID(), key, source: canonical, dataset, suite, title, reporter, followRef, refreshSeconds: seconds,
-          registeredAt: new Date(now()).toISOString(), archived: false, completed: false, observation: 'waiting', stages: [], nextReadAt: 0 };
+        const run = makeRun({ source: canonical, dataset, suite, title, reporter, followRef, refreshSeconds: seconds, manual: true });
         state.runs.push(run); return run.id;
       });
       return refresh(id);
@@ -225,13 +327,28 @@ export async function trackingStore(file, { read = readSuite, attempt = readAtte
     async attempt(id, task, runId) { const run = find(id); return attempt(run.observedSource || run.source, run.dataset, run.suite, task, runId); },
     start() {
       if (timer || disposed) return;
+      const eligible = run => run && !run.archived && !run.completed && run.autoUpdate !== false && (run.manual !== false || run.subscriptionIds?.length) && run.nextReadAt <= now() && !deleting.has(run.id);
       const tick = async () => {
-        try { for (const run of data.runs.filter(r => !r.archived && !r.completed && r.autoUpdate !== false && r.nextReadAt <= now())) { if (disposed) break; const current = data.runs.find(r => r.id === run.id); if (!current || current.archived || current.autoUpdate === false || deleting.has(run.id)) continue; await refresh(run.id, { automatic: true }); } }
-        catch (error) { console.warn('[ageval-viewer] Tracking sampler:', error.message); }
+        try {
+          for (const run of data.runs.filter(eligible)) {
+            if (disposed) break;
+            if (eligible(data.runs.find(current => current.id === run.id))) await refresh(run.id, { automatic: true });
+          }
+        } catch (error) { if (!disposed) console.warn('[ageval-viewer] Tracking sampler:', error.message); }
         finally { if (!disposed) { timer = setTimeout(tick, 5000); timer.unref?.(); } }
       };
+      const discoverTick = () => {
+        const available = Math.max(0, 4 - scans.size);
+        const due = data.subscriptions.filter(sub => sub.nextScanAt <= now() && !scans.has(sub.id));
+        for (const sub of due.slice(0, available)) void scanSubscription(sub.id).catch(error => { if (!disposed) console.warn('[ageval-viewer] Directory scan:', error.message); });
+        if (!disposed) { discoveryTimer = setTimeout(discoverTick, 5000); discoveryTimer.unref?.(); }
+      };
       timer = setTimeout(tick, 1000); timer.unref?.();
+      discoveryTimer = setTimeout(discoverTick, 1000); discoveryTimer.unref?.();
     },
-    async dispose() { disposed = true; clearTimeout(timer); await Promise.allSettled([...flights.values()]); await queue; },
+    async dispose() {
+      disposed = true; clearTimeout(timer); clearTimeout(discoveryTimer); discoveryAbort.abort();
+      await Promise.allSettled([...flights.values(), ...scans.values()]); await queue;
+    },
   };
 }

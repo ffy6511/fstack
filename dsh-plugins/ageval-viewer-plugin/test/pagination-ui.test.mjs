@@ -56,3 +56,63 @@ test('job table switches only selected attempt timing and reuses prior attempt r
   table().props.onRunChange('t', 'new'); tree = render(props); await tick(); tree = render(props);
   assert.equal(calls.length, 2); assert.equal(table().props.runs.t, 'new');
 });
+
+test('job time header sorting uses known selected Attempt times across filtered pages', async () => {
+  const { plugin, render } = await harness();
+  const date = day => `2026-11-${String(day).padStart(2, '0')}T00:00:00Z`;
+  const tasks = Array.from({ length: 25 }, (_, i) => ({ taskId: 't' + i, runId: 'r' + i, status: i < 24 ? 'pass' : 'fail', startedAt: date(i + 1), finishedAt: date(26 - i) }));
+  tasks[24].startedAt = 'invalid'; tasks[24].finishedAt = null;
+  tasks[0].runIds = ['r0', 'older'];
+  const calls = [];
+  const props = { data: { row: { dataset: '.', suite: 's' }, tasks, errors: {} }, selected: false, error: '', busy: '', onBack() {}, onAttempt() {},
+    onTimings: async items => { calls.push(items); return { results: items.map(item => ({ taskId: item.task, runId: item.run, timing: item.run === 'older' ? { finishedAt: date(28) } : {} })) }; } };
+  let tree = render(props);
+  const table = () => nodes(tree).find(n => n.type === plugin.JobTable).props;
+  const ids = () => Array.from(table().tasks, task => task.taskId);
+  const clickSort = label => {
+    const content = plugin.JobTable(table());
+    const control = nodes(content).find(n => n.type === 'button' && n.props['aria-label']?.startsWith('按' + label + '排序'));
+    control.props.onClick(); tree = render(props);
+  };
+  button(tree, '下一页').props.onClick(); tree = render(props);
+  clickSort('开始时间');
+  assert.equal(button(tree, '上一页').props.disabled, true);
+  assert.deepEqual(ids().slice(0, 2), ['t23', 't22']);
+  assert.equal(calls.length, 0);
+  clickSort('开始时间'); assert.deepEqual(ids().slice(0, 2), ['t0', 't1']);
+  clickSort('完成时间'); assert.deepEqual(ids().slice(0, 2), ['t0', 't1']);
+  const headings = plugin.JobTable(table()).children[1].children[0].children;
+  assert.equal(headings[4].props['aria-sort'], undefined);
+  assert.equal(headings[5].props['aria-sort'], 'descending');
+  table().onRunChange('t0', 'older'); tree = render(props);
+  assert.equal(ids()[0], 't1', 'latest Attempt timestamp is not reused while the older one is loading');
+  await tick(); tree = render(props);
+  assert.equal(ids()[0], 't0'); assert.equal(calls.length, 1); assert.equal(calls[0][0].run, 'older');
+  clickSort('完成时间'); assert.deepEqual(ids().slice(0, 2), ['t23', 't22']);
+  button(tree, '下一页').props.onClick(); tree = render(props); await tick(); tree = render(props);
+  assert.deepEqual(ids(), ['t3', 't2', 't1', 't0', 't24']);
+  assert.deepEqual(Array.from(calls[1], item => item.task), ['t24']);
+  clickSort('开始时间');
+  assert.equal(button(tree, '上一页').props.disabled, true);
+  assert.equal(ids()[0], 't23');
+  nodes(tree).find(n => n.props.id === 'ageval-task-verdict').props.onChange('fail');
+  tree = render(props);
+  assert.deepEqual(ids(), ['t24']);
+  assert.equal(table().sort, 'startedAt-desc');
+});
+
+test('sorting a partly known time field reads only the visible batch and does not cascade on reorder', async () => {
+  const { plugin, render } = await harness();
+  const tasks = Array.from({ length: 45 }, (_, i) => ({ taskId: 't' + i, runId: 'r' + i, status: 'pass', durationMs: 1000 }));
+  const calls = [];
+  const props = { data: { row: { dataset: '.', suite: 's' }, tasks, errors: {} }, selected: false, error: '', busy: '', onBack() {}, onAttempt() {},
+    onTimings: async items => { calls.push(items); return { results: items.map(item => ({ taskId: item.task, runId: item.run, timing: { startedAt: Number(item.task.slice(1)) >= 20 ? '2026-11-17T00:00:00Z' : '2026-11-16T00:00:00Z' } })) }; } };
+  let tree = render(props);
+  const table = () => nodes(tree).find(n => n.type === plugin.JobTable).props;
+  assert.equal(calls.length, 0);
+  table().onSort('startedAt-desc'); tree = render(props); await tick(); tree = render(props);
+  assert.deepEqual(Array.from(calls[0], item => item.task), tasks.slice(0, 20).map(task => task.taskId));
+  button(tree, '下一页').props.onClick(); tree = render(props); await tick(); tree = render(props);
+  assert.equal(calls.length, 2); assert.equal(calls[1][0].task, 't20');
+  assert.deepEqual(Array.from(table().tasks, task => task.taskId), tasks.slice(0, 20).map(task => task.taskId));
+});

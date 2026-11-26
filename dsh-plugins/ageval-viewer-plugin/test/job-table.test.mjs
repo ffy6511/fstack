@@ -11,7 +11,7 @@ async function load() {
   return plugin;
 }
 const nodes = tree => [tree, ...(tree.children || []).filter(n => n && typeof n === 'object').flatMap(nodes)];
-const text = tree => typeof tree !== 'object' ? String(tree ?? '') : (tree.children || []).map(text).join('');
+const text = tree => tree == null || typeof tree !== 'object' ? String(tree ?? '') : (tree.children || []).map(text).join('');
 const rowCells = row => row.children.map(cell => cell.children[0]?.props?.field ? cell.children[0].type(cell.children[0].props) : cell.children[0]);
 
 test('jobs use aligned table columns, preserve zero scores and isolate attempt controls from navigation', async () => {
